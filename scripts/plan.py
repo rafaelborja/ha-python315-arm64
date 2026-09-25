@@ -49,4 +49,7 @@ for i in range(n):
 if len(sys.argv) > 5:
     test, _ = pins(sys.argv[5])
     (out / "test.txt").write_text("\n".join(test[k] for k in sorted(test)) + "\n")
+    # Constraints for the test build: the image's pins, except packages HA's requirements_test.txt pins itself
+    # (the image ships e.g. pytest 9.1.1 while HA tests with 9.0.3: the test pin wins for test tooling).
+    (out / "test-constraints.txt").write_text("\n".join(base[k] for k in sorted(base) if k not in test) + "\n")
 print(f"{len(base)} packages ({len(extra)} extras) in {n} chunks; {len(skipped)} skipped")

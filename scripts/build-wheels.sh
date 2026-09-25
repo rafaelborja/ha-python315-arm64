@@ -8,6 +8,8 @@
 LIST=$1; OUT=$2; mkdir -p "$OUT/wh" "$OUT/logs"; : > "$OUT/status.tsv"
 DEPS=--no-deps; [ "${WITH_DEPS:-0}" = 1 ] && DEPS=
 CONS=; [ -n "${CONSTRAINTS:-}" ] && CONS="-c $CONSTRAINTS"
+# Reuse does not apply to the dependency (test) build: it always starts from an empty wheel directory.
+[ "${WITH_DEPS:-0}" = 1 ] && PREV_STATUS=
 [ -n "${PREV_STATUS:-}" ] && cut -f1,2 "$PREV_STATUS" > /tmp/prev.ok
 # With dependencies, resolve the whole list ONCE: one version of every package (per-package resolution gave two
 # versions of isort, pylint, librt...). Fall back to one package at a time only if that fails.
@@ -30,6 +32,10 @@ while IFS= read -r p || [ -n "$p" ]; do
   fi
   # shellcheck disable=SC2086
   if timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$p" > "$OUT/logs/$n.log" 2>&1; then
+    s=OK; rm -f "$OUT/logs/$n.log"
+  elif grep -q "newer than PyO3's maximum supported version" "$OUT/logs/$n.log" &&
+       PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$p" >> "$OUT/logs/$n.log" 2>&1; then
+    # Retry-only: forcing the stable ABI on every PyO3 build breaks crates that use the full API (pydantic-core).
     s=OK; rm -f "$OUT/logs/$n.log"
   else
     s=FAIL

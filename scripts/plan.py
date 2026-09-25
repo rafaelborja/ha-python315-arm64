@@ -48,8 +48,17 @@ for i in range(n):
 (out / "skipped.txt").write_text("\n".join(skipped) + "\n")
 if len(sys.argv) > 5:
     test, _ = pins(sys.argv[5])
+    # When a test pin and the image disagree: test TOOLING takes the test pin (the image ships pytest 9.1.1, HA
+    # tests with 9.0.3); anything else keeps the image's version, because that is what is under test (a test pin
+    # of pydantic pulled another pydantic-core, which does not build for 3.15).
+    TOOLS = {norm(s) for s in ("coverage", "freezegun", "syrupy", "respx", "requests-mock", "tqdm", "pluggy",
+                               "iniconfig", "execnet", "pytest", "mypy", "mypy-dev", "pylint", "astroid", "isort")}
+    tooling = lambda k: k in TOOLS or k.startswith("pytest")
+    keep_image = sorted(k for k in test if k in base and base[k] != test[k] and not tooling(k))
+    for k in keep_image:
+        test[k] = base[k]
     (out / "test.txt").write_text("\n".join(test[k] for k in sorted(test)) + "\n")
-    # Constraints for the test build: the image's pins, except packages HA's requirements_test.txt pins itself
-    # (the image ships e.g. pytest 9.1.1 while HA tests with 9.0.3: the test pin wins for test tooling).
-    (out / "test-constraints.txt").write_text("\n".join(base[k] for k in sorted(base) if k not in test) + "\n")
+    (out / "test-constraints.txt").write_text(
+        "\n".join(base[k] for k in sorted(base) if not (k in test and tooling(k))) + "\n")
+    print(f"test pins replaced by the image's version: {', '.join(keep_image) or 'none'}")
 print(f"{len(base)} packages ({len(extra)} extras) in {n} chunks; {len(skipped)} skipped")

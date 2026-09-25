@@ -5,5 +5,5 @@ ARG BASE
 FROM ${BASE}
 RUN --mount=type=bind,source=wh-test,target=/tmp/wh \
     python3.15 -m pip install --no-deps --no-compile /tmp/wh/*.whl
-ARG TEST_FILTER=filter_v22_test
+ARG TEST_FILTER=filter_v23_test
 COPY lazy/${TEST_FILTER}.json /etc/ha-lazy-filter-test.json

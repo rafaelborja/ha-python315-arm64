@@ -7,7 +7,18 @@
 _ha_upstream_find_library = find_library
 
 
+_ha_musl_cache = {}
+
+
 def _ha_musl_find_library(name):
+    # cached: a lookup can run on HA's event loop when the importing module was imported lazily
+    if name in _ha_musl_cache:
+        return _ha_musl_cache[name]
+    _ha_musl_cache[name] = result = _ha_musl_search(name)
+    return result
+
+
+def _ha_musl_search(name):
     from glob import glob
 
     def is_elf(path):

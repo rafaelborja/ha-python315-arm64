@@ -30,7 +30,7 @@ Python 3.15 is still a release candidate. **This is not for production.** As of 
 - `HA_PY_FLAGS=...`: extra 3.15 flags;
 - `PYTHONMALLOC=pymalloc|mimalloc`: the allocator (default mimalloc, as in the official image).
 
-`/config/ha-lazy-filter.json` holds exclusions ADDED to the baked `lazy/filter_v15.json`; with `"replace": true` it
+`/config/ha-lazy-filter.json` holds exclusions ADDED to the baked `lazy/filter_v16.json`; with `"replace": true` it
 replaces it. The format is explained in `lazy/ha_lazy_hook.py`. If no filter loads, every import is made eager.
 Restart Core to apply.
 

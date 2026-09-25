@@ -22,15 +22,25 @@ RUN --mount=type=bind,source=wh,target=/tmp/wh \
 # - The HA image enables only Alpine's main repository; openblas & co. are in community: pass both explicitly.
 # - Hashed names (libavcodec-b08b5f75.so...) are libraries bundled inside wheels (*.libs/), which the extensions load
 #   through their own RPATH; musl's ldd cannot resolve them when run on the bundled library itself: skip them.
+# - Some packages declare namespaced provides (openblas: "so:openblas:libopenblas.so.3"), which `so:<soname>` misses;
+#   then the provider is looked up in the APKINDEX of both repositories.
 # - Anything real still missing fails the build.
-RUN rel=$(cut -d. -f1,2 /etc/alpine-release); \
-    repos="--repository https://dl-cdn.alpinelinux.org/alpine/v$rel/main --repository https://dl-cdn.alpinelinux.org/alpine/v$rel/community"; \
+RUN rel=$(cut -d. -f1,2 /etc/alpine-release); arch=$(apk --print-arch); \
+    base="https://dl-cdn.alpinelinux.org/alpine/v$rel"; repos="--repository $base/main --repository $base/community"; \
+    for r in main community; do \
+      for i in 1 2 3; do wget -qO- "$base/$r/$arch/APKINDEX.tar.gz" | tar -xzO APKINDEX > "/tmp/APKINDEX.$r" && break; sleep 5; done; \
+    done; \
+    provider() { cat /tmp/APKINDEX.main /tmp/APKINDEX.community | awk -v so="$1" 'BEGIN { RS = "" } \
+      index($0, ":" so "=") { n = split($0, L, "\n"); for (i = 1; i <= n; i++) if (L[i] ~ /^P:/) { print substr(L[i], 3); exit } }'; }; \
     scan() { find /usr/local/lib/python3.15 -name '*.so*' -type f ! -path '*.libs/*' -exec ldd {} \; 2>&1 \
       | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' \
       | grep -v -E -- '-[0-9a-f]{8}\.so' | sort -u | tr '\n' ' '; }; \
     missing=$(scan); echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \
-    for so in $missing; do apk add --no-cache $repos "so:$so" || echo "no Alpine package provides $so"; done; \
-    left=$(scan); echo "still missing: ${left:-none}"; [ -z "$left" ]
+    for so in $missing; do \
+      apk add --no-cache $repos "so:$so" 2>/dev/null && continue; \
+      pkg=$(provider "$so"); echo "$so -> ${pkg:-no provider}"; [ -n "$pkg" ] && apk add --no-cache $repos "$pkg"; \
+    done; \
+    rm -f /tmp/APKINDEX.*; left=$(scan); echo "still missing: ${left:-none}"; [ -z "$left" ]
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py

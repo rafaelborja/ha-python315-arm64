@@ -17,6 +17,15 @@ RUN --mount=type=bind,source=wh,target=/tmp/wh \
  && (python3.15 -m compileall -q -j0 /usr/local/lib/python3.15 /usr/src/homeassistant/homeassistant > /tmp/compileall.log 2>&1 \
      || echo "compileall: $(grep -c Error /tmp/compileall.log) files did not compile (kept as source)") \
  && rm -f /tmp/compileall.log
+# Wheels compiled from source here link against system libraries of the builder (numpy -> libopenblas.so.3) that the
+# HA image may not have. Find every soname a 3.15 extension cannot load and install the Alpine package providing it.
+RUN missing=$(find /usr/local/lib/python3.15 -name '*.so*' -type f -exec ldd {} \; 2>&1 \
+      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' | sort -u | tr '\n' ' '); \
+    echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \
+    for so in $missing; do apk add --no-cache "so:$so" || echo "WARNING: no Alpine package provides $so"; done; \
+    left=$(find /usr/local/lib/python3.15 -name '*.so*' -type f -exec ldd {} \; 2>&1 \
+      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' | sort -u | tr '\n' ' '); \
+    echo "still missing: ${left:-none}"
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py

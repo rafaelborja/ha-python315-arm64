@@ -16,8 +16,10 @@ def weight(paths) -> int:
 
 
 units = {}
+# Integrations whose tests cannot run on 3.15 at all (a dependency has no 3.15 build): skipped, listed here.
+SKIP = {"fish_audio"}  # ormsgpack: PyO3 0.27 does not support 3.15
 for d in sorted((tests / "components").iterdir()):
-    if d.is_dir():
+    if d.is_dir() and d.name not in SKIP:
         files = list(d.rglob("test_*.py"))
         if files:
             units[d.relative_to(core).as_posix()] = weight(files)

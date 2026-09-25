@@ -5,6 +5,7 @@
 #   HA_PYTHON=3.14    start the original interpreter, unchanged command
 #   HA_LAZY=1         PEP 810 lazy imports on (-X lazy_imports=all + the exclusion filter). Default 0.
 #   HA_PY_FLAGS=...   extra interpreter flags for 3.15
+#   PYTHONMALLOC=...  allocator (the run script defaults to mimalloc; pymalloc for comparisons)
 # The exclusion list itself is edited in /config/ha-lazy-filter.json (see ha_lazy_hook.py). Restart Core to apply.
 set -e
 f=/etc/services.d/home-assistant/run
@@ -14,7 +15,7 @@ HA_PYTHON="${HA_PYTHON:-3.15}"; HA_LAZY="${HA_LAZY:-0}"; HA_PY_FLAGS="${HA_PY_FL
 if [[ -f /config/ha-py315.conf ]]; then
   while IFS='=' read -r key value || [[ -n "${key}" ]]; do
     value="${value%$'\r'}"; value="${value#\"}"; value="${value%\"}"
-    case "${key}" in HA_PYTHON|HA_LAZY|HA_PY_FLAGS) printf -v "${key}" '%s' "${value}" ;; esac
+    case "${key}" in HA_PYTHON|HA_LAZY|HA_PY_FLAGS|PYTHONMALLOC) printf -v "${key}" '%s' "${value}" ;; esac
   done < /config/ha-py315.conf
 fi
 if [[ "${HA_PYTHON}" != "3.14" ]]; then
@@ -23,7 +24,7 @@ if [[ "${HA_PYTHON}" != "3.14" ]]; then
   export UV_PYTHON=/usr/local/bin/python3.15
   py_flags=()
   if [[ "${HA_LAZY}" == "1" ]]; then py_flags+=(-X lazy_imports=all); fi
-  bashio::log.info "Starting Core on Python 3.15 (lazy imports: ${HA_LAZY}, flags: ${HA_PY_FLAGS:-none})"
+  bashio::log.info "Starting Core on Python 3.15 (lazy imports: ${HA_LAZY}, flags: ${HA_PY_FLAGS:-none}, allocator: ${PYTHONMALLOC})"
   # shellcheck disable=SC2086
   exec python3.15 "${py_flags[@]}" ${HA_PY_FLAGS} -P -m homeassistant --config /config
 fi

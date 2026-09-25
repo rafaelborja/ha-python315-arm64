@@ -27,7 +27,8 @@ Python 3.15 is still a release candidate. **This is not for production.** As of 
 `/config/ha-py315.conf`, one `KEY=value` per line (only these keys are read; the file is never sourced):
 - `HA_LAZY=1`: lazy imports on;
 - `HA_PYTHON=3.14`: the original interpreter;
-- `HA_PY_FLAGS=...`: extra 3.15 flags.
+- `HA_PY_FLAGS=...`: extra 3.15 flags;
+- `PYTHONMALLOC=pymalloc|mimalloc`: the allocator (default mimalloc, as in the official image).
 
 `/config/ha-lazy-filter.json` holds exclusions ADDED to the baked `lazy/filter_v12.json`; with `"replace": true` it
 replaces it. The format is explained in `lazy/ha_lazy_hook.py`. If no filter loads, every import is made eager.

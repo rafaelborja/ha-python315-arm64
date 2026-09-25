@@ -124,13 +124,19 @@ def main() -> None:
     ap.add_argument("--shard", default="0/1")
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--modes", default=",".join(MODES), help="subset of 314,315,lazy")
+    ap.add_argument("--only", default="", help="file with target keys (pkg:x / int:y) to check")
     a = ap.parse_args()
     i, n = map(int, a.shard.split("/"))
     allt = {**top_levels(), **integrations()}
     keys = sorted(allt)[i::n]
+    if a.only:
+        want = set(pathlib.Path(a.only).read_text().split())
+        keys = [k for k in keys if k in want]
+    modes = [m for m in a.modes.split(",") if m in MODES]
     results: dict[str, dict] = {k: {} for k in keys}
     with cf.ThreadPoolExecutor(a.jobs) as ex:
-        futs = {ex.submit(run, m, allt[k]): (k, m) for k in keys for m in MODES}
+        futs = {ex.submit(run, m, allt[k]): (k, m) for k in keys for m in modes}
         for done, f in enumerate(cf.as_completed(futs), 1):
             k, m = futs[f]
             results[k][m] = f.result()
@@ -139,12 +145,13 @@ def main() -> None:
     out = {"shard": a.shard, "targets": {}, "regress_315": [], "regress_lazy": [], "fail_314": []}
     for k in keys:
         r = results[k]
-        out["targets"][k] = {"modules": allt[k], **{m: r[m] for m in MODES if failed(r[m])}}
-        if failed(r["314"]):
+        out["targets"][k] = {"modules": allt[k], **{m: r[m] for m in modes if failed(r[m])}}
+        f = {m: failed(r[m]) if m in r else None for m in MODES}
+        if f["314"]:
             out["fail_314"].append(k)
-        if failed(r["315"]) and not failed(r["314"]):
+        if f["315"] and f["314"] is False:
             out["regress_315"].append(k)
-        if failed(r["lazy"]) and not failed(r["315"]):
+        if f["lazy"] and f["315"] is not True:  # without an eager 3.15 run in this pass, every lazy failure is listed
             out["regress_lazy"].append(k)
     pathlib.Path(a.out).write_text(json.dumps(out, indent=1))
     print(f"shard {a.shard}: {len(keys)} targets; 3.15 regressions {len(out['regress_315'])}, "

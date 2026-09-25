@@ -9,8 +9,8 @@ Python 3.15 is still a release candidate. **This is not for production.** As of 
 `docker-base` has no Python 3.15 image.
 
 ## Workflow (`.github/workflows/build.yml`, manual dispatch, native arm64 runners)
-1. **plan**: the installed packages of the official image, plus `extras/vm-runtime.txt` (what the target VM's
-   custom components install at runtime) and HA's `requirements_test.txt`. Fails when the HA image and the
+1. **plan**: the installed packages of the official image, plus `extras/vm-runtime.txt` (empty in public
+   builds; setup-specific pins stay private) and HA's `requirements_test.txt`. Fails when the HA image and the
    Python image are on different Alpine releases.
 2. **wheels**: 8 chunks plus the test dependencies, built in `Dockerfile.builder` (the apk list of HA's own
    `wheels.yml`).

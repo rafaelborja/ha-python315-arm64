@@ -41,6 +41,10 @@ RUN rel=$(cut -d. -f1,2 /etc/alpine-release); arch=$(apk --print-arch); \
       pkg=$(provider "$so"); echo "$so -> ${pkg:-no provider}"; [ -n "$pkg" ] && apk add --no-cache $repos "$pkg"; \
     done; \
     rm -f /tmp/APKINDEX.*; left=$(scan); echo "still missing: ${left:-none}"; [ -z "$left" ]
+# musl find_library fallback for ctypes (HA's own 3.14 has Alpine's patch; the official 3.15 image does not).
+COPY lazy/ctypes_musl_find_library.py /tmp/ctypes_musl.py
+RUN cat /tmp/ctypes_musl.py >> /usr/local/lib/python3.15/ctypes/util.py && rm /tmp/ctypes_musl.py \
+ && python3.15 -m compileall -q /usr/local/lib/python3.15/ctypes/util.py
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py

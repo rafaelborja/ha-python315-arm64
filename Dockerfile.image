@@ -48,7 +48,7 @@ RUN cat /tmp/ctypes_musl.py >> /usr/local/lib/python3.15/ctypes/util.py && rm /t
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
-COPY lazy/filter_v13.json /etc/ha-lazy-filter.json
+COPY lazy/filter_v15.json /etc/ha-lazy-filter.json
 COPY scripts/patch-run.sh /tmp/patch-run.sh
 RUN sh /tmp/patch-run.sh && rm /tmp/patch-run.sh
 ENV LAZY_PRELOAD=tokenize LAZY_REIFY_EARLY=1

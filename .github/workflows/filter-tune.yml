@@ -1,0 +1,39 @@
+name: filter-tune
+# Lazy-import check of every package and integration with one or more filter variants (lazy mode only), to narrow the
+# exclusion list from data. Uses an image already in GHCR. Results: artifact "tune-<variant>-<shard>".
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "image in GHCR"
+        default: "ghcr.io/rafaelborja/ha-py315:2026.9.3-8"
+        required: true
+      variants:
+        description: "JSON list of filter files under lazy/ (without .json)"
+        default: '["filter_v18", "tune_aggr"]'
+        required: true
+permissions:
+  contents: read
+  packages: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(inputs.variants) }}
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - name: lazy import check (${{ matrix.variant }}, shard ${{ matrix.shard }}/4)
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull -q "${{ inputs.image }}"
+          mkdir -p out
+          docker run --rm -v "$PWD:/w" -e LAZY_FILTER=/w/lazy/${{ matrix.variant }}.json -e LAZY_FILTER_OVERRIDE=/nonexistent \
+            --entrypoint python3.15 "${{ inputs.image }}" /w/scripts/import_check.py --modes lazy \
+            --shard ${{ matrix.shard }}/4 --out /w/out/tune-${{ matrix.variant }}-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "tune-${{ matrix.variant }}-${{ matrix.shard }}", path: out, retention-days: 3 }

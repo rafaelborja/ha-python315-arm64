@@ -1,0 +1,29 @@
+{
+ "importers": [
+  "numpy",
+  "pandas",
+  "actron_neo_api",
+  "aioautomower",
+  "mcp",
+  "mozart_api",
+  "weheat",
+  "aiortm",
+  "openai",
+  "google.genai",
+  "aiohasupervisor",
+  "ifaddr",
+  "aiousbwatcher",
+  "anyio",
+  "dbus_fast",
+  "bleak"
+ ],
+ "names": [
+  "importlib.metadata",
+  "xml.etree",
+  "ifaddr",
+  "google.genai",
+  "aiohasupervisor",
+  "aiousbwatcher",
+  "anyio"
+ ]
+}

@@ -15,7 +15,7 @@ pt() {  # pt <tag> <paths file> [docker env args...]
   mapfile -t paths < "$list"
   [ ${#paths[@]} -eq 0 ] && return 0
   timeout 170m docker run "${common[@]}" "$@" "$IMG" -m pytest -p no:cacheprovider -n 4 --dist loadfile \
-    --timeout 120 -o junit_family=xunit1 -q -rfE --junitxml="/r/$tag.xml" "${paths[@]}" > "$OUT/$tag.log" 2>&1
+    --timeout 120 --continue-on-collection-errors -o junit_family=xunit1 -q -rfE --junitxml="/r/$tag.xml" "${paths[@]}" > "$OUT/$tag.log" 2>&1
   echo "$tag: $(tail -1 "$OUT/$tag.log")"
 }
 

@@ -1,0 +1,8 @@
+# syntax=docker/dockerfile:1
+# Test image: the built Core image + HA's test requirements (cp315 wheels) + the test variant of the lazy filter
+# (adds pytest and its plugins as eager importers). HA's tests/ are mounted at run time from a checkout of the tag.
+ARG BASE
+FROM ${BASE}
+RUN --mount=type=bind,source=wh-test,target=/tmp/wh \
+    python3.15 -m pip install -q --no-deps --no-compile /tmp/wh/*.whl
+COPY lazy/filter_v12_test.json /etc/ha-lazy-filter-test.json

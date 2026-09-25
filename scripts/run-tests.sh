@@ -21,6 +21,10 @@ pt() {  # pt <tag> <paths file> [docker env args...]
 
 pt eager "$SHARD"
 pt lazy "$SHARD" "${lazy_env[@]}"
+# A session that never started (e.g. conftest import error) writes no junit: that is a failure, not "0 regressions".
+for tag in eager lazy; do
+  [ -s "$OUT/$tag.xml" ] || { echo "::error::$tag session produced no results:"; tail -5 "$OUT/$tag.log"; exit 1; }
+done
 python3 scripts/compare_tests.py "$OUT" "$CORE"
 pt eager-rerun "$OUT/rerun_files.txt"
 pt lazy-rerun "$OUT/rerun_files.txt" "${lazy_env[@]}"

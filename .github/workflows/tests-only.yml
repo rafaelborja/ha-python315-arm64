@@ -1,0 +1,79 @@
+name: tests-only
+# HA's test suite, 3.15 eager vs 3.15 lazy with a chosen filter, against an image already in GHCR. Rebuilds only the
+# test dependencies (cp315 wheels); the Core packages come from the image.
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "image in GHCR"
+        default: "ghcr.io/rafaelborja/ha-py315:2026.9.3-8"
+        required: true
+      ha_version:
+        description: "HA version (core git tag for the tests)"
+        default: "2026.9.3"
+        required: true
+      test_filter:
+        description: "test filter file under lazy/ (without .json)"
+        default: "filter_v22_test"
+        required: true
+permissions:
+  contents: read
+  packages: read
+env:
+  IMAGE: ${{ inputs.image }}
+  SHARDS: "16"
+jobs:
+  test-wheels:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: plan (installed 3.15 packages of the image + HA test requirements)
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull -q "$IMAGE"
+          docker run --rm -i --entrypoint python3.15 "$IMAGE" - < scripts/list_installed.py > installed.txt
+          curl -fsSL "https://raw.githubusercontent.com/home-assistant/core/${{ inputs.ha_version }}/requirements_test.txt" > requirements_test.txt
+          python3 scripts/plan.py installed.txt extras/vm-runtime.txt 1 plan requirements_test.txt
+      - name: build test wheels
+        run: |
+          docker build -q -t builder -f Dockerfile.builder .
+          docker run --rm -v "$PWD:/w" -e WITH_DEPS=1 -e CONSTRAINTS=/w/plan/test-constraints.txt builder \
+            sh /w/scripts/build-wheels.sh /w/plan/test.txt /w/out
+      - uses: actions/upload-artifact@v4
+        with: { name: wheels-test, path: out, retention-days: 3 }
+  tests:
+    needs: test-wheels
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: home-assistant/core
+          ref: ${{ inputs.ha_version }}
+          path: core
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /tests/
+            /script/
+            /pylint/
+            /pyproject.toml
+      - uses: actions/download-artifact@v4
+        with: { name: wheels-test, path: wheels-test }
+      - name: test image
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          mkdir -p wh-test; find wheels-test -name '*.whl' -exec cp {} wh-test/ \;
+          docker build -q -t ha-py315-test --build-arg BASE="$IMAGE" --build-arg TEST_FILTER="${{ inputs.test_filter }}" -f Dockerfile.test .
+      - name: HA test suite, shard ${{ matrix.shard }}
+        run: |
+          python3 scripts/split_tests.py core "$SHARDS" shards
+          timeout 200m bash scripts/run-tests.sh ha-py315-test shards/shard-${{ matrix.shard }}.txt out/shard-${{ matrix.shard }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "tests-${{ matrix.shard }}", path: "out/**/*", retention-days: 3 }

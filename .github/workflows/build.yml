@@ -19,6 +19,10 @@ on:
         description: "run HA's test suite"
         type: boolean
         default: true
+      reuse_run:
+        description: "run ID whose wheels to reuse (only packages that failed there are rebuilt); empty = build all"
+        default: ""
+        required: false
 permissions:
   contents: read
   packages: write
@@ -59,6 +63,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with: { name: plan, path: plan }
+      - uses: actions/download-artifact@v4
+        if: ${{ inputs.reuse_run != '' }}
+        with:
+          name: "wheels-${{ matrix.chunk }}"
+          path: prev
+          run-id: ${{ inputs.reuse_run }}
+          github-token: ${{ github.token }}
       - name: builder image
         run: docker build -q -t builder --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.builder .
       - name: build wheels (${{ matrix.chunk }})
@@ -67,6 +78,10 @@ jobs:
             list=/w/plan/test.txt; extra=(-e WITH_DEPS=1 -e CONSTRAINTS=/w/plan/required.txt)
           else
             list=/w/plan/chunk-${{ matrix.chunk }}.txt; extra=()
+          fi
+          if [ -f prev/status.tsv ]; then
+            mkdir -p out/wh; cp prev/wh/*.whl out/wh/ 2>/dev/null || true
+            extra+=(-e PREV_STATUS=/w/prev/status.tsv)
           fi
           docker run --rm -v "$PWD:/w" "${extra[@]}" builder sh /w/scripts/build-wheels.sh "$list" /w/out
       - uses: actions/upload-artifact@v4
@@ -113,8 +128,9 @@ jobs:
                   try: importlib.import_module(m)
                   except Exception as e: out.append(f'{m}: {e}')
               return out
-          need = bad(['ssl','sqlite3','ctypes','lzma','bz2','zlib','_uuid','_decimal','_hashlib','pyexpat','zoneinfo','select','mmap','_ssl','_sqlite3','_ctypes'])
-          opt = bad(['readline','_curses','_dbm','_gdbm','_tkinter'])
+          need = bad(['ssl','sqlite3','ctypes','lzma','bz2','zlib','_uuid','_hashlib','pyexpat','zoneinfo','select','mmap','_ssl','_sqlite3','_ctypes'])
+          # _decimal: the official python:3.15.0rc2-alpine image ships without it; decimal falls back to _pydecimal
+          opt = bad(['_decimal','readline','_curses','_dbm','_gdbm','_tkinter'])
           import homeassistant.const as c
           print(sys.version, c.__version__); print('optional missing:', opt); print('REQUIRED missing:', need); assert not need"
           docker run --rm --entrypoint python3.15 ha-py315 -X lazy_imports=all -c "import sys, homeassistant.core; print('lazy mode:', sys.get_lazy_imports(), 'filter:', sys.get_lazy_imports_filter())"

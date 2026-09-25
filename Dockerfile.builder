@@ -9,5 +9,9 @@ RUN apk add --no-cache build-base linux-headers pkgconf cmake ninja git rust car
       eigen-dev freetype-dev harfbuzz-dev hdf5-dev openjpeg-dev uchardet-dev nasm zlib-ng-dev zlib-dev c-ares-dev \
       libusb-dev cups-dev postgresql-dev mariadb-dev unixodbc-dev bzip2-dev xz-dev \
  && pip install -q -U pip wheel setuptools cython
+# PYO3_USE_ABI3_FORWARD_COMPATIBILITY: PyO3 <= 0.27 refuses Python 3.15 ("newer than PyO3's maximum supported
+#   version"); with this it builds against the stable ABI instead (cachebox, ormsgpack).
+# -Wno-error=int-conversion: GCC 14+ made int/pointer mixing an error; old C sources (netifaces 0.11) still do it.
 ENV MAKEFLAGS=-j4 CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS=4 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_PREFER_BINARY=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_PREFER_BINARY=1 \
+    PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 CFLAGS="-Wno-error=int-conversion"

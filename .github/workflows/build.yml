@@ -152,6 +152,13 @@ jobs:
           bash scripts/ha-start-check.sh ha-py315 py315-lazy report/start HA_LAZY=1 || rc=1
           cat report/start/summary.md >> report/summary.md
           sed -n '/### Real start/,$p' report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          # 3.15 (eager or lazy) must not log more import/setup errors than 3.14 on the same image. Checking only lazy
+          # would miss breakage that lazy imports merely postpone (numpy/libopenblas, run 36152200118).
+          base=$(awk -F'|' '$2 ~ /py314/ {gsub(/ /,"",$9); print $9}' report/start/summary.md)
+          for m in py315 py315-lazy; do
+            n=$(awk -F'|' -v m=" $m " '$2 == m {gsub(/ /,"",$9); print $9}' report/start/summary.md)
+            if [ "${n:-999}" -gt "${base:-0}" ]; then echo "::error::$m: $n import/setup errors vs $base on 3.14"; rc=1; fi
+          done
           exit $rc
       - name: image tarball for the VM
         run: |

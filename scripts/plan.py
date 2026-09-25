@@ -2,8 +2,8 @@
 
 Usage: python plan.py installed.txt extras.txt N outdir [test_requirements.txt]
 - installed.txt: "name==version" per line, as listed from the image's site-packages (homeassistant excluded).
-- extras.txt: pins that must also be in the image (packages the target VM installs at runtime for custom
-  components). A pin here replaces the image's pin of the same package.
+- extras.txt: extra pins to build into the image (empty in public builds). A pin here replaces the image's pin of
+  the same package.
 - test_requirements.txt (optional): HA's requirements_test.txt; its pins go to outdir/test.txt (built with deps,
   installed only in the test image, never in the Core image).
 Chunks are dealt round-robin over a slow-first order so the known long compiles spread across jobs.

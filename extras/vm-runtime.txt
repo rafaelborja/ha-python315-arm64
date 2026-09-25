@@ -1,0 +1,3 @@
+# Extra pins to build into the image, one "name==version" per line (a pin here replaces the image's pin).
+# Public builds keep this empty: setup-specific packages (e.g. requirements of custom components a particular
+# install uses) belong in a private build, never in this public repository.

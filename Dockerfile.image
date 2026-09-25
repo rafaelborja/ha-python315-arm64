@@ -1,22 +1,27 @@
-# The official Home Assistant image with Python 3.15 added next to 3.14 (nothing else changes: same s6 init,
-# ffmpeg, system libraries, /usr/src/homeassistant). Core starts on 3.15 with PEP 810 lazy imports and the
-# exclusion filter; set HA_PYTHON=3.14 to start it on the original interpreter instead.
+# syntax=docker/dockerfile:1
+# The official Home Assistant image with Python 3.15 added next to 3.14. Nothing else changes: same s6 init, ffmpeg,
+# system libraries, /usr/src/homeassistant. Core starts on 3.15; lazy imports are OFF until switched on at runtime
+# (/config/ha-py315.conf: HA_LAZY=1). HA_PYTHON=3.14 there starts the original interpreter instead.
 ARG HA_IMAGE=ghcr.io/home-assistant/qemuarm-64-homeassistant:2026.9.3
-ARG PY_IMAGE=python:3.15-rc-alpine3.24
+ARG PY_IMAGE=python:3.15.0rc2-alpine3.24
 FROM ${PY_IMAGE} AS py
 
 FROM ${HA_IMAGE}
 COPY --from=py /usr/local/bin/python3.15 /usr/local/bin/python3.15
 COPY --from=py /usr/local/lib/libpython3.15.so.1.0 /usr/local/lib/libpython3.15.so.1.0
 COPY --from=py /usr/local/lib/python3.15 /usr/local/lib/python3.15
-COPY wh /tmp/wh
-RUN python3.15 -m pip install -q --no-deps --no-index --no-compile /tmp/wh/*.whl && rm -rf /tmp/wh \
+# The wheels are bind-mounted, not copied, so they do not stay behind in a layer.
+RUN --mount=type=bind,source=wh,target=/tmp/wh \
+    python3.15 -m pip install -q --no-deps --no-index --no-compile /tmp/wh/*.whl \
  && echo /usr/src/homeassistant > /usr/local/lib/python3.15/site-packages/homeassistant-src.pth \
- && echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth
+ && (python3.15 -m compileall -q -j0 /usr/local/lib/python3.15 /usr/src/homeassistant/homeassistant > /tmp/compileall.log 2>&1 \
+     || echo "compileall: $(grep -c Error /tmp/compileall.log) files did not compile (kept as source)") \
+ && rm -f /tmp/compileall.log
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
+RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
+ && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 COPY lazy/filter_v12.json /etc/ha-lazy-filter.json
-# Start Core on 3.15 unless HA_PYTHON=3.14. HA_PY_FLAGS="" turns lazy imports off (3.15 without PEP 810).
 COPY scripts/patch-run.sh /tmp/patch-run.sh
 RUN sh /tmp/patch-run.sh && rm /tmp/patch-run.sh
-ENV LAZY_FILTER=/etc/ha-lazy-filter.json LAZY_PRELOAD=tokenize LAZY_REIFY_EARLY=1
-LABEL org.opencontainers.image.description="Home Assistant 2026.9.3 (official image) + Python 3.15 with PEP 810 lazy imports - experiment"
+ENV LAZY_PRELOAD=tokenize LAZY_REIFY_EARLY=1
+LABEL org.opencontainers.image.description="Home Assistant 2026.9.3 (official image) + Python 3.15 RC; PEP 810 lazy imports switchable at runtime - experiment"

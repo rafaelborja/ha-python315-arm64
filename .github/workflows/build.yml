@@ -75,7 +75,7 @@ jobs:
       - name: build wheels (${{ matrix.chunk }})
         run: |
           if [ "${{ matrix.chunk }}" = test ]; then
-            list=/w/plan/test.txt; extra=(-e WITH_DEPS=1 -e CONSTRAINTS=/w/plan/required.txt)
+            list=/w/plan/test.txt; extra=(-e WITH_DEPS=1 -e CONSTRAINTS=/w/plan/test-constraints.txt)
           else
             list=/w/plan/chunk-${{ matrix.chunk }}.txt; extra=()
           fi

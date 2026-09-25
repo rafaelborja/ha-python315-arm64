@@ -9,6 +9,19 @@ LIST=$1; OUT=$2; mkdir -p "$OUT/wh" "$OUT/logs"; : > "$OUT/status.tsv"
 DEPS=--no-deps; [ "${WITH_DEPS:-0}" = 1 ] && DEPS=
 CONS=; [ -n "${CONSTRAINTS:-}" ] && CONS="-c $CONSTRAINTS"
 [ -n "${PREV_STATUS:-}" ] && cut -f1,2 "$PREV_STATUS" > /tmp/prev.ok
+# With dependencies, resolve the whole list ONCE: one version of every package (per-package resolution gave two
+# versions of isort, pylint, librt...). Fall back to one package at a time only if that fails.
+if [ "${WITH_DEPS:-0}" = 1 ]; then
+  rm -f "$OUT"/wh/*  # never mix with wheels reused from an earlier run: they may carry other versions
+  t=$(date +%s)
+  # shellcheck disable=SC2086
+  if timeout 90m pip wheel $CONS -w "$OUT/wh" -r "$LIST" > "$OUT/logs/_all.log" 2>&1; then
+    rm -f "$OUT/logs/_all.log"
+    grep -v '^$' "$LIST" | while IFS= read -r p; do printf 'OK\t%s\t%s\n' "$p" "$(( $(date +%s) - t ))"; done | tee "$OUT/status.tsv"
+    echo "done: resolved and built the whole list at once"; exit 0
+  fi
+  echo "whole-list build failed (logs/_all.log); falling back to one package at a time"; rm -f "$OUT"/wh/*
+fi
 while IFS= read -r p || [ -n "$p" ]; do
   [ -z "$p" ] && continue
   n=${p%%==*}; t=$(date +%s)

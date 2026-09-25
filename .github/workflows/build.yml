@@ -1,0 +1,114 @@
+name: ha-python315
+# Home Assistant (official aarch64 image) + Python 3.15 with PEP 810 lazy imports - memory experiment.
+# 1) plan: pinned package list of the official image -> N chunks
+# 2) wheels: cp315 musllinux aarch64 wheels for every package, native arm64 runners, one chunk per job
+# 3) image: official image + python3.15 + wheels + lazy-import hook/filter -> smoke test -> ghcr.io
+on:
+  workflow_dispatch:
+    inputs:
+      ha_image:
+        description: "official HA image (the one the target runs)"
+        default: "ghcr.io/home-assistant/qemuarm-64-homeassistant:2026.9.3"
+        required: true
+      py_image:
+        description: "Python 3.15 image (same Alpine as the HA image)"
+        default: "python:3.15-rc-alpine3.24"
+        required: true
+permissions:
+  contents: write
+  packages: write
+env:
+  HA_IMAGE: ${{ inputs.ha_image }}
+  PY_IMAGE: ${{ inputs.py_image }}
+  CHUNKS: "8"
+jobs:
+  plan:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: pinned packages of the official image
+        run: |
+          docker run --rm --entrypoint sh "$HA_IMAGE" -c 'cat /etc/alpine-release; python3 -V' | tee base.txt
+          docker run --rm --entrypoint python3 "$HA_IMAGE" -m pip freeze --exclude-editable | grep -vi '^homeassistant==' > freeze.txt
+          python3 scripts/plan.py freeze.txt "$CHUNKS" plan
+          cp freeze.txt base.txt plan/
+      - uses: actions/upload-artifact@v4
+        with: { name: plan, path: plan }
+
+  wheels:
+    needs: plan
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: plan, path: plan }
+      - name: builder image
+        run: docker build -q -t builder --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.builder .
+      - name: build wheels (chunk ${{ matrix.chunk }})
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD:/w" builder sh /w/scripts/build-wheels.sh /w/plan/chunk-${{ matrix.chunk }}.txt /w/out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: "wheels-${{ matrix.chunk }}", path: out }
+
+  image:
+    needs: wheels
+    if: always()
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { pattern: "wheels-*", path: parts }
+      - uses: actions/download-artifact@v4
+        with: { name: plan, path: plan }
+      - name: merge wheels and status
+        run: |
+          mkdir -p wh report/logs
+          find parts -name '*.whl' -exec cp {} wh/ \;
+          cat parts/*/status.tsv | sort > report/status.tsv
+          find parts -path '*/logs/*.log' -exec cp {} report/logs/ \;
+          cp plan/skipped.txt plan/base.txt report/
+          ok=$(grep -c '^OK' report/status.tsv || true); fail=$(grep -c '^FAIL' report/status.tsv || true)
+          {
+            echo "## cp315 wheels: $ok ok, $fail failed ($(ls wh | wc -l) wheel files)"
+            echo; echo "Base: $(tr '\n' ' ' < plan/base.txt)"; echo
+            echo "### Failed"; echo '```'; grep '^FAIL' report/status.tsv || true; echo '```'
+            echo "### Slowest 15"; echo '```'; sort -t$'\t' -k3 -n -r report/status.tsv | head -15; echo '```'
+          } | tee report/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: build image
+        run: |
+          docker build -t ha-py315 --build-arg HA_IMAGE="$HA_IMAGE" --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.image .
+      - name: smoke test
+        run: |
+          set -x
+          docker run --rm --entrypoint python3.15 ha-py315 -c "import sys, homeassistant.const as c; print(sys.version, c.__version__, sys.flags.lazy_imports)"
+          docker run --rm --entrypoint python3.15 ha-py315 -X lazy_imports=all -c "import sys; print('lazy mode:', sys.get_lazy_imports())"
+          docker run --rm --entrypoint sh ha-py315 -c 'grep -n python3 /etc/services.d/home-assistant/run'
+          # import every top-level module that has a wheel, eagerly, to list the ones that cannot load on 3.15
+          docker run --rm --entrypoint python3.15 -v "$PWD/report:/r" ha-py315 -c "
+          import importlib, importlib.metadata as md, json
+          bad = {}
+          for d in md.distributions():
+              for top in (d.read_text('top_level.txt') or '').split():
+                  if top.startswith('_') or top in ('tests', 'test', 'docs'): continue
+                  try: importlib.import_module(top)
+                  except BaseException as e: bad[top] = f'{type(e).__name__}: {e}'[:200]
+          json.dump(bad, open('/r/import_failures.json', 'w'), indent=1); print(len(bad), 'top-level modules failed to import')
+          " || true
+          echo "### Import check: $(python3 -c "import json;print(len(json.load(open('report/import_failures.json'))))" 2>/dev/null) top-level modules fail to import (report/import_failures.json)" >> "$GITHUB_STEP_SUMMARY"
+      - name: push image
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          T=ghcr.io/${{ github.repository_owner }}/ha-py315:2026.9.3-${{ github.run_number }}
+          docker tag ha-py315 "$T"; docker push "$T"
+          echo "Image: \`$T\`" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: report, path: report }

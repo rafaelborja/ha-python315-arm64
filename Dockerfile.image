@@ -19,13 +19,18 @@ RUN --mount=type=bind,source=wh,target=/tmp/wh \
  && rm -f /tmp/compileall.log
 # Wheels compiled from source here link against system libraries of the builder (numpy -> libopenblas.so.3) that the
 # HA image may not have. Find every soname a 3.15 extension cannot load and install the Alpine package providing it.
-RUN missing=$(find /usr/local/lib/python3.15 -name '*.so*' -type f -exec ldd {} \; 2>&1 \
-      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' | sort -u | tr '\n' ' '); \
-    echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \
-    for so in $missing; do apk add --no-cache "so:$so" || echo "WARNING: no Alpine package provides $so"; done; \
-    left=$(find /usr/local/lib/python3.15 -name '*.so*' -type f -exec ldd {} \; 2>&1 \
-      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' | sort -u | tr '\n' ' '); \
-    echo "still missing: ${left:-none}"
+# - The HA image enables only Alpine's main repository; openblas & co. are in community: pass both explicitly.
+# - Hashed names (libavcodec-b08b5f75.so...) are libraries bundled inside wheels (*.libs/), which the extensions load
+#   through their own RPATH; musl's ldd cannot resolve them when run on the bundled library itself: skip them.
+# - Anything real still missing fails the build.
+RUN rel=$(cut -d. -f1,2 /etc/alpine-release); \
+    repos="--repository https://dl-cdn.alpinelinux.org/alpine/v$rel/main --repository https://dl-cdn.alpinelinux.org/alpine/v$rel/community"; \
+    scan() { find /usr/local/lib/python3.15 -name '*.so*' -type f ! -path '*.libs/*' -exec ldd {} \; 2>&1 \
+      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' \
+      | grep -v -E -- '-[0-9a-f]{8}\.so' | sort -u | tr '\n' ' '; }; \
+    missing=$(scan); echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \
+    for so in $missing; do apk add --no-cache $repos "so:$so" || echo "no Alpine package provides $so"; done; \
+    left=$(scan); echo "still missing: ${left:-none}"; [ -z "$left" ]
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py

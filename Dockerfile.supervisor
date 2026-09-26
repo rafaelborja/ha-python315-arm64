@@ -41,6 +41,9 @@ RUN cat /tmp/ctypes_musl.py >> /usr/local/lib/python3.15/ctypes/util.py && rm /t
 COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
 RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
  && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
+COPY lazy/sup_probe_timer.py /usr/local/lib/python3.15/site-packages/sup_probe_timer.py
+RUN echo "import os; os.environ.get('SUP_PROBE') and __import__('sup_probe_timer')" > /usr/local/lib/python3.15/site-packages/sup_probe_timer.pth \
+ && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/sup_probe_timer.py
 COPY lazy/sup_filter_v1.json /etc/ha-lazy-filter.json
 COPY scripts/sup-patch-run.sh /tmp/sup-patch-run.sh
 RUN sh /tmp/sup-patch-run.sh && rm /tmp/sup-patch-run.sh

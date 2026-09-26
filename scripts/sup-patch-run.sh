@@ -6,6 +6,7 @@
 #   SUP_LAZY=1        PEP 810 lazy imports on (-X lazy_imports=all + the exclusion filter). Default 0.
 #   SUP_PY_FLAGS=...  extra interpreter flags for 3.15
 #   PYTHONMALLOC=...  allocator (the official run script defaults to mimalloc)
+#   SUP_PROBE=<sec>   run the memory probe inside the Supervisor after <sec> seconds (sup_probe_timer.py)
 # The exclusion list is edited in /data/sup-lazy-filter.json (see ha_lazy_hook.py). Restart Supervisor to apply.
 set -e
 f=/etc/services.d/supervisor/run
@@ -15,9 +16,10 @@ SUP_PYTHON="${SUP_PYTHON:-3.15}"; SUP_LAZY="${SUP_LAZY:-0}"; SUP_PY_FLAGS="${SUP
 if [[ -f /data/sup-py315.conf ]]; then
   while IFS='=' read -r key value || [[ -n "${key}" ]]; do
     value="${value%$'\r'}"; value="${value#\"}"; value="${value%\"}"
-    case "${key}" in SUP_PYTHON|SUP_LAZY|SUP_PY_FLAGS|PYTHONMALLOC) printf -v "${key}" '%s' "${value}" ;; esac
+    case "${key}" in SUP_PYTHON|SUP_LAZY|SUP_PY_FLAGS|SUP_PROBE|PYTHONMALLOC) printf -v "${key}" '%s' "${value}" ;; esac
   done < /data/sup-py315.conf
   export PYTHONMALLOC
+  [[ -n "${SUP_PROBE:-}" ]] && export SUP_PROBE
 fi
 if [[ "${SUP_PYTHON}" != "3.14" ]]; then
   py_flags=()

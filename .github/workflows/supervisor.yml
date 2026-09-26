@@ -140,6 +140,15 @@ jobs:
           docker build -q -t sup-test -f Dockerfile.suptest .
       - name: Supervisor test suite, 3.15 eager vs lazy
         run: |
+          # blockbuster (forbiddenfruit) cannot patch builtin types on 3.15 ("cannot set '__next__' attribute of
+          # immutable type 'posix.ScandirIterator'"); its autouse fixture would error every test. Off for this
+          # comparison only; at runtime Supervisor activates it only with the detect-blocking-IO debug option.
+          python3 - <<'EOF'
+          p = "src/tests/conftest.py"; t = open(p).read()
+          old = '    if getattr(request, "param", "") == "no_blockbuster":'
+          assert old in t
+          open(p, "w").write(t.replace(old, '    if True:  # blockbuster disabled on 3.15 (see workflow)', 1))
+          EOF
           mkdir -p res
           for mode in eager lazy; do
             flags=""; env=""; [ $mode = lazy ] && flags="-X lazy_imports=all" && env="-e LAZY_MOCK_FIX=1"

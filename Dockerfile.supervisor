@@ -1,0 +1,41 @@
+# syntax=docker/dockerfile:1
+# The official Home Assistant Supervisor image with Python 3.15 added next to 3.14. Nothing else changes: same s6
+# init, bashio, /usr/src/supervisor. Supervisor starts on 3.15; lazy imports are OFF until switched on at runtime
+# (/data/sup-py315.conf: SUP_LAZY=1; on HAOS /data is /mnt/data/supervisor). SUP_PYTHON=3.14 there starts the
+# original interpreter instead. If this image does not start, HAOS's launcher (haos-supervisor) removes it and pulls
+# the official one again.
+ARG SUP_IMAGE=ghcr.io/home-assistant/aarch64-hassio-supervisor:2026.09.2
+ARG PY_IMAGE=python:3.15.0rc2-alpine3.24
+FROM ${PY_IMAGE} AS py
+
+FROM ${SUP_IMAGE}
+COPY --from=py /usr/local/bin/python3.15 /usr/local/bin/python3.15
+COPY --from=py /usr/local/lib/libpython3.15.so.1.0 /usr/local/lib/libpython3.15.so.1.0
+COPY --from=py /usr/local/lib/python3.15 /usr/local/lib/python3.15
+# Supervisor itself is installed editable from /usr/src/supervisor in the official image: point 3.15 at it too.
+RUN --mount=type=bind,source=wh,target=/tmp/wh \
+    python3.15 -m pip install -q --no-deps --no-index --no-compile /tmp/wh/*.whl \
+ && echo /usr/src/supervisor > /usr/local/lib/python3.15/site-packages/supervisor-src.pth \
+ && (python3.15 -m compileall -q -j0 /usr/local/lib/python3.15 /usr/src/supervisor/supervisor > /tmp/compileall.log 2>&1 \
+     || echo "compileall: $(grep -c Error /tmp/compileall.log) files did not compile (kept as source)") \
+ && rm -f /tmp/compileall.log
+# Extensions compiled here may need sonames the official image lacks; install their providers (see Dockerfile.image).
+RUN rel=$(cut -d. -f1,2 /etc/alpine-release); base="https://dl-cdn.alpinelinux.org/alpine/v$rel"; \
+    repos="--repository $base/main --repository $base/community"; \
+    scan() { find /usr/local/lib/python3.15 -name '*.so*' -type f ! -path '*.libs/*' -exec ldd {} \; 2>&1 \
+      | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' \
+      | grep -v -E -- '-[0-9a-f]{8}\.so' | sort -u | tr '\n' ' '; }; \
+    missing=$(scan); echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \
+    for so in $missing; do apk add --no-cache $repos "so:$so"; done; \
+    left=$(scan); echo "still missing: ${left:-none}"; [ -z "$left" ]
+COPY lazy/ctypes_musl_find_library.py /tmp/ctypes_musl.py
+RUN cat /tmp/ctypes_musl.py >> /usr/local/lib/python3.15/ctypes/util.py && rm /tmp/ctypes_musl.py \
+ && python3.15 -m compileall -q /usr/local/lib/python3.15/ctypes/util.py
+COPY lazy/ha_lazy_hook.py /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
+RUN echo "import ha_lazy_hook" > /usr/local/lib/python3.15/site-packages/ha_lazy_hook.pth \
+ && python3.15 -m compileall -q /usr/local/lib/python3.15/site-packages/ha_lazy_hook.py
+COPY lazy/sup_filter_v1.json /etc/ha-lazy-filter.json
+COPY scripts/sup-patch-run.sh /tmp/sup-patch-run.sh
+RUN sh /tmp/sup-patch-run.sh && rm /tmp/sup-patch-run.sh
+ENV LAZY_FILTER_OVERRIDE=/data/sup-lazy-filter.json LAZY_PRELOAD=tokenize LAZY_REIFY_EARLY=1
+LABEL org.opencontainers.image.description="Home Assistant Supervisor (official image) + Python 3.15 RC; PEP 810 lazy imports switchable at runtime - experiment"

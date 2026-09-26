@@ -1,0 +1,166 @@
+name: supervisor-python315
+# Home Assistant Supervisor on Python 3.15 RC (arm64): cp315 wheels for every package of the official image ->
+# image (official Supervisor + 3.15, lazy imports switchable) -> import probe (3.14 official / 3.15 / 3.15 lazy) ->
+# Supervisor's own test suite, 3.15 without vs with lazy imports.
+on:
+  workflow_dispatch:
+    inputs:
+      sup_version:
+        description: "Supervisor version (image tag and git tag)"
+        default: "2026.09.2"
+        required: true
+      py_image:
+        description: "Python 3.15 base image"
+        default: "python:3.15.0rc2-alpine3.24"
+        required: true
+      sup_filter:
+        description: "lazy filter under lazy/ (without .json)"
+        default: "sup_filter_v1"
+        required: true
+permissions:
+  contents: read
+  packages: write
+env:
+  SUP_IMAGE: ghcr.io/home-assistant/aarch64-hassio-supervisor:${{ inputs.sup_version }}
+  PY_IMAGE: ${{ inputs.py_image }}
+  OUT_IMAGE: ghcr.io/${{ github.repository_owner }}/sup-py315:${{ inputs.sup_version }}-${{ github.run_number }}
+jobs:
+  wheels:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: installed packages of the official image
+        run: |
+          docker run --rm -i --entrypoint python3 "$SUP_IMAGE" - < scripts/list_installed.py > installed.txt
+          sup_alpine=$(sed -n 's/^# alpine //p' installed.txt | cut -d. -f1,2)
+          py_alpine=$(docker run --rm "$PY_IMAGE" cat /etc/alpine-release | cut -d. -f1,2)
+          echo "Supervisor image: Alpine $sup_alpine, $(sed -n 's/^# python //p' installed.txt); $PY_IMAGE: Alpine $py_alpine"
+          if [ "$sup_alpine" != "$py_alpine" ]; then echo "::error::Alpine mismatch: $sup_alpine vs $py_alpine"; exit 1; fi
+          grep -v '^#' installed.txt | grep -v -i -E '^(supervisor|pip|uv)==' > list.txt
+          wc -l list.txt
+          curl -fsSL "https://raw.githubusercontent.com/home-assistant/supervisor/${{ inputs.sup_version }}/requirements_tests.txt" | grep -v -i -E "^(astroid|mypy|pre-commit|pylint|ruff|types-)" > test.txt
+      - name: builder image
+        run: docker build -q -t builder --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.builder .
+      - name: build wheels
+        run: |
+          docker run --rm -v "$PWD:/w" builder sh /w/scripts/build-wheels.sh /w/list.txt /w/out
+          docker run --rm -v "$PWD:/w" -e WITH_DEPS=1 -e CONSTRAINTS=/w/list.txt builder sh /w/scripts/build-wheels.sh /w/test.txt /w/out-test
+          echo "runtime: $(grep -c ^OK out/status.tsv) OK, $(grep -c ^FAIL out/status.tsv) FAIL"; grep ^FAIL out/status.tsv || true
+          echo "tests:   $(grep -c ^OK out-test/status.tsv) OK, $(grep -c ^FAIL out-test/status.tsv) FAIL"; grep ^FAIL out-test/status.tsv || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: sup-wheels, path: "out*", retention-days: 7 }
+
+  image:
+    needs: wheels
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: sup-wheels, path: . }
+      - name: build image
+        run: |
+          if grep -q ^FAIL out/status.tsv; then echo "::warning::runtime wheels missing: $(grep ^FAIL out/status.tsv | cut -f2 | tr '\n' ' ')"; fi
+          cp lazy/${{ inputs.sup_filter }}.json lazy/sup_filter_v1.json 2>/dev/null || true
+          mkdir -p wh && cp out/wh/*.whl wh/
+          docker build -t sup-py315 --build-arg SUP_IMAGE="$SUP_IMAGE" --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.supervisor .
+      - name: probe (imports only; 3.14 official, 3.15, 3.15 lazy; pymalloc and mimalloc)
+        run: |
+          mkdir -p probe
+          run() { docker run --rm -i -e PYTHONMALLOC=$2 --entrypoint $3 sup-py315 $4 - "$1" < scripts/sup_probe.py > "probe/$1.json"; \
+                  python3 -c "import json;d=json.load(open('probe/$1.json'));print('$1', d['python'], 'rss', d['rss_MB'], 'traced', d['traced_MB'], 'modules', d['modules'], 'errors', d['errors'])"; }
+          run 314_mimalloc mimalloc python3 ""
+          run 314_pymalloc pymalloc python3 ""
+          run 315_pymalloc pymalloc python3.15 ""
+          run 315_lazy_pymalloc pymalloc python3.15 "-X lazy_imports=all"
+          run 315_lazy_mimalloc mimalloc python3.15 "-X lazy_imports=all"
+          python3 -c "import json;d=json.load(open('probe/314_pymalloc.json'));[print(f'{v:8.2f} MiB  {k}') for k,v in d['per_package_MB'].items()]"
+      - name: import every supervisor module (3.15 and 3.15 lazy)
+        run: |
+          for mode in "" "-X lazy_imports=all"; do
+            docker run --rm --entrypoint python3.15 sup-py315 $mode -c "
+          import importlib, pkgutil, supervisor, sys
+          bad = {}
+          for m in pkgutil.walk_packages(supervisor.__path__, 'supervisor.'):
+              try:
+                  mod = importlib.import_module(m.name)
+                  for k in list(vars(mod)): getattr(mod, k)  # resolve lazy names
+              except Exception as ex:
+                  bad[m.name] = f'{type(ex).__name__}: {ex}'[:160]
+          print('mode', sys.flags.lazy_imports, 'modules', len(sys.modules), 'failed', len(bad))
+          for k, v in sorted(bad.items()): print('  ', k, v)
+          "
+          done
+      - name: push image to GHCR
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag sup-py315 "$OUT_IMAGE" && docker push -q "$OUT_IMAGE"
+          echo "pushed $OUT_IMAGE"
+      - name: image tarball for the VM
+        run: docker save sup-py315 | gzip -1 > sup-py315.tar.gz && sha256sum sup-py315.tar.gz | tee sup-py315.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with: { name: sup-image, path: "sup-py315.tar.gz*", retention-days: 7, compression-level: 0 }
+      - uses: actions/upload-artifact@v4
+        with: { name: sup-probe, path: probe }
+
+  tests:
+    needs: image
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { repository: home-assistant/supervisor, ref: "${{ inputs.sup_version }}", path: src }
+      - uses: actions/download-artifact@v4
+        with: { name: sup-wheels, path: . }
+      - name: test image
+        run: |
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          python3 - <<'EOF'
+          import json
+          f = json.load(open("lazy/${{ inputs.sup_filter }}.json"))
+          tool = ["_pytest", "pytest", "pluggy", "xdist", "execnet", "iniconfig", "pytest_asyncio", "pytest_timeout",
+                  "pytest_cov", "coverage", "syrupy", "freezegun", "time_machine", "pytest_aiohttp", "tests"]
+          f["importers"] = f.get("importers", []) + [t for t in tool if t not in f.get("importers", [])]
+          json.dump(f, open("sup-test-filter.json", "w"))
+          EOF
+          cat > Dockerfile.suptest <<EOF
+          FROM $OUT_IMAGE
+          RUN --mount=type=bind,source=out-test/wh,target=/tmp/wh python3.15 -m pip install -q --no-deps --no-index /tmp/wh/*.whl
+          COPY sup-test-filter.json /etc/ha-lazy-filter.json
+          EOF
+          docker build -q -t sup-test -f Dockerfile.suptest .
+      - name: Supervisor test suite, 3.15 eager vs lazy
+        run: |
+          mkdir -p res
+          for mode in eager lazy; do
+            flags=""; env=""; [ $mode = lazy ] && flags="-X lazy_imports=all" && env="-e LAZY_MOCK_FIX=1"
+            docker run --rm $env -e LAZY_FILTER_OVERRIDE=/nonexistent -v "$PWD/src:/src" -v "$PWD/res:/res" -w /src --entrypoint python3.15 sup-test \
+              $flags -m pytest tests -q -p no:cacheprovider -n 4 --timeout=300 --junitxml=/res/$mode.xml > res/$mode.log 2>&1 || true
+            echo "$mode: $(tail -1 res/$mode.log)"
+          done
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET, collections, re
+          def res(p):
+              try: root = ET.parse(p).getroot()
+              except Exception: return None
+              out = {}
+              for tc in root.iter("testcase"):
+                  k = f"{tc.get('classname')}::{tc.get('name')}"; st = "passed"; msg = ""
+                  for ch in tc:
+                      if ch.tag in ("failure", "error"): st = ch.tag; msg = (ch.get("message") or "")[:150]
+                      elif ch.tag == "skipped": st = "skipped"
+                  out[k] = (st, msg)
+              return out
+          e, l = res("res/eager.xml"), res("res/lazy.xml")
+          if not e or not l: print("::error::missing junit"); raise SystemExit(1)
+          reg = {k: l[k][1] for k in e if e[k][0] == "passed" and k in l and l[k][0] in ("failure", "error")}
+          print("eager failing:", sum(v[0] in ("failure", "error") for v in e.values()), "| lazy regressions:", len(reg))
+          c = collections.Counter(re.sub(r"0x[0-9a-f]+|\d+", "N", m) for m in reg.values())
+          for m, n in c.most_common(25): print(f"{n:5}  {m}")
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: sup-tests, path: res }

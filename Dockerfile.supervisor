@@ -19,6 +19,13 @@ RUN --mount=type=bind,source=wh,target=/tmp/wh \
  && (python3.15 -m compileall -q -j0 /usr/local/lib/python3.15 /usr/src/supervisor/supervisor > /tmp/compileall.log 2>&1 \
      || echo "compileall: $(grep -c Error /tmp/compileall.log) files did not compile (kept as source)") \
  && rm -f /tmp/compileall.log
+# Docstrings replaced by "." in the 3.15 bytecode of Supervisor and every library (the .py files are unchanged), as
+# in the lean 3.14 Supervisor image the VM runs, so the comparison measures 3.15 and lazy imports, not docstrings.
+# Libraries that read their docstrings (click, typer, docopt, ply, fire) keep them.
+RUN --mount=type=bind,source=scripts/precompile.py,target=/tmp/precompile.py \
+    DOCSTRIP=placeholder PRECOMPILE_ROOTS=/usr/src/supervisor/supervisor:/usr/local/lib/python3.15/site-packages \
+    python3.15 /tmp/precompile.py \
+ && python3.15 -c "import supervisor.coresys as c; d = c.CoreSys.__doc__; print('docstring stripped:', d in (None, '.')); assert d in (None, '.')"
 # Extensions compiled here may need sonames the official image lacks; install their providers (see Dockerfile.image).
 RUN rel=$(cut -d. -f1,2 /etc/alpine-release); base="https://dl-cdn.alpinelinux.org/alpine/v$rel"; \
     repos="--repository $base/main --repository $base/community"; \
@@ -38,4 +45,4 @@ COPY lazy/sup_filter_v1.json /etc/ha-lazy-filter.json
 COPY scripts/sup-patch-run.sh /tmp/sup-patch-run.sh
 RUN sh /tmp/sup-patch-run.sh && rm /tmp/sup-patch-run.sh
 ENV LAZY_FILTER_OVERRIDE=/data/sup-lazy-filter.json LAZY_PRELOAD=tokenize LAZY_REIFY_EARLY=1
-LABEL org.opencontainers.image.description="Home Assistant Supervisor (official image) + Python 3.15 RC; PEP 810 lazy imports switchable at runtime - experiment"
+LABEL org.opencontainers.image.description="Home Assistant Supervisor (official image) + Python 3.15 RC, docstrings stripped; PEP 810 lazy imports switchable at runtime - experiment"

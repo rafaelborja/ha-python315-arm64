@@ -14,7 +14,7 @@ on:
         required: true
       test_filter:
         description: "test filter file under lazy/ (without .json)"
-        default: "filter_v24_test"
+        default: "filter_v25_test"
         required: true
 permissions:
   contents: read

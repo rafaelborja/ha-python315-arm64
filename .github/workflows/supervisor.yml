@@ -69,13 +69,18 @@ jobs:
       - name: probe (imports only; 3.14 official, 3.15, 3.15 lazy; pymalloc and mimalloc)
         run: |
           mkdir -p probe
-          run() { docker run --rm -i -e PYTHONMALLOC=$2 --entrypoint $3 sup-py315 $4 - "$1" < scripts/sup_probe.py > "probe/$1.json"; \
+          run() { docker run --rm -i -e PYTHONMALLOC=$2 -e PROBE_TRACE=${TRACE:-1} --entrypoint $3 sup-py315 $4 - "$1" < scripts/sup_probe.py > "probe/$1.json"; \
                   python3 -c "import json;d=json.load(open('probe/$1.json'));print('$1', d['python'], 'rss', d['rss_MB'], 'traced', d['traced_MB'], 'modules', d['modules'], 'errors', d['errors'])"; }
           run 314_mimalloc mimalloc python3 ""
           run 314_pymalloc pymalloc python3 ""
           run 315_pymalloc pymalloc python3.15 ""
           run 315_lazy_pymalloc pymalloc python3.15 "-X lazy_imports=all"
           run 315_lazy_mimalloc mimalloc python3.15 "-X lazy_imports=all"
+          export TRACE=0  # the same without tracemalloc: real RSS, no tracing overhead
+          run notrace_314_mimalloc mimalloc python3 ""
+          run notrace_314_pymalloc pymalloc python3 ""
+          run notrace_315_pymalloc pymalloc python3.15 ""
+          run notrace_315_lazy_pymalloc pymalloc python3.15 "-X lazy_imports=all"
           python3 -c "import json;d=json.load(open('probe/314_pymalloc.json'));[print(f'{v:8.2f} MiB  {k}') for k,v in d['per_package_MB'].items()]"
       - name: import every supervisor module (3.15 and 3.15 lazy)
         run: |
@@ -128,6 +133,7 @@ jobs:
           EOF
           cat > Dockerfile.suptest <<EOF
           FROM $OUT_IMAGE
+          RUN apk add --no-cache dbus && mkdir -p /run/dbus
           RUN --mount=type=bind,source=out-test/wh,target=/tmp/wh python3.15 -m pip install -q --no-deps --no-index /tmp/wh/*.whl
           COPY sup-test-filter.json /etc/ha-lazy-filter.json
           EOF

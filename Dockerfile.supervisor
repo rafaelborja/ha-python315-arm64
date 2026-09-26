@@ -29,7 +29,7 @@ RUN --mount=type=bind,source=scripts/precompile.py,target=/tmp/precompile.py \
 # Extensions compiled here may need sonames the official image lacks; install their providers (see Dockerfile.image).
 RUN rel=$(cut -d. -f1,2 /etc/alpine-release); base="https://dl-cdn.alpinelinux.org/alpine/v$rel"; \
     repos="--repository $base/main --repository $base/community"; \
-    scan() { find /usr/local/lib/python3.15 -name '*.so*' -type f ! -path '*.libs/*' -exec ldd {} \; 2>&1 \
+    scan() { find /usr/local/lib/python3.15 -name '*.so*' -type f ! -path '*.libs/*' ! -name '_tkinter*' -exec ldd {} \; 2>&1 \
       | sed -n 's/.*Error loading shared library \([^:]*\): No such file.*/\1/p' \
       | grep -v -E -- '-[0-9a-f]{8}\.so' | sort -u | tr '\n' ' '; }; \
     missing=$(scan); echo "shared libraries missing for 3.15 extensions: ${missing:-none}"; \

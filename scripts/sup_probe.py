@@ -6,10 +6,13 @@ shows what lazy imports would save at import time. Runtime memory (caches, Docke
 real install.
 """
 import json
+import os
 import sys
 import tracemalloc
 
-tracemalloc.start(1)
+TRACE = os.environ.get("PROBE_TRACE", "1") != "0"  # 0: RSS only, no tracing overhead
+if TRACE:
+    tracemalloc.start(1)
 
 
 def main():
@@ -38,11 +41,11 @@ def owner(filename):
 
 
 errors = main()
-snap = tracemalloc.take_snapshot()
 per = {}
-for st in snap.statistics("filename"):
-    k = owner(st.traceback[0].filename)
-    per[k] = per.get(k, 0) + st.size
+if TRACE:
+    for st in tracemalloc.take_snapshot().statistics("filename"):
+        k = owner(st.traceback[0].filename)
+        per[k] = per.get(k, 0) + st.size
 mods = {}
 for name in list(sys.modules):
     top = name.split(".")[0]

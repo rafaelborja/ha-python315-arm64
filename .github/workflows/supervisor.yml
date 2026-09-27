@@ -17,6 +17,10 @@ on:
         description: "lazy filter under lazy/ (without .json)"
         default: "sup_filter_v1"
         required: true
+      extra_source:
+        description: "optional pip requirement (e.g. git+https://...@commit) that REPLACES the same package's wheel"
+        default: ""
+        required: false
 permissions:
   contents: read
   packages: write
@@ -48,6 +52,16 @@ jobs:
           docker run --rm -v "$PWD:/w" -e WITH_DEPS=1 -e CONSTRAINTS=/w/list.txt builder sh /w/scripts/build-wheels.sh /w/test.txt /w/out-test
           echo "runtime: $(grep -c ^OK out/status.tsv) OK, $(grep -c ^FAIL out/status.tsv) FAIL"; grep ^FAIL out/status.tsv || true
           echo "tests:   $(grep -c ^OK out-test/status.tsv) OK, $(grep -c ^FAIL out-test/status.tsv) FAIL"; grep ^FAIL out-test/status.tsv || true
+      - name: replace one package with a patched build
+        if: ${{ inputs.extra_source != '' }}
+        env:
+          SRC: ${{ inputs.extra_source }}
+        run: |
+          mkdir -p extra
+          docker run --rm -v "$PWD:/w" -e SRC builder sh -c 'pip wheel --no-deps -w /w/extra "$SRC"'
+          w=$(ls extra/*.whl); name=$(basename "$w" | cut -d- -f1)
+          echo "replacing $(ls out/wh/${name}-* | xargs -n1 basename) with $(basename "$w")"
+          rm -f out/wh/${name}-*.whl && cp "$w" out/wh/
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: sup-wheels, path: "out*", retention-days: 7 }

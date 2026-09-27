@@ -61,7 +61,7 @@ jobs:
           docker run --rm -v "$PWD:/w" -e SRC builder sh -c 'pip wheel --no-deps -w /w/extra "$SRC"'
           w=$(ls extra/*.whl); name=$(basename "$w" | cut -d- -f1)
           echo "replacing $(ls out/wh/${name}-* | xargs -n1 basename) with $(basename "$w")"
-          rm -f out/wh/${name}-*.whl && cp "$w" out/wh/
+          sudo rm -f out/wh/${name}-*.whl && sudo cp "$w" out/wh/
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: sup-wheels, path: "out*", retention-days: 7 }

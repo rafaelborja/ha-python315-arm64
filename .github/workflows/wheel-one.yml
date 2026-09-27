@@ -1,0 +1,32 @@
+name: wheel-one
+# One cp315 musl arm64 wheel from a git ref (a patched library to try on the VM), built in the same builder image as
+# the Core and Supervisor wheels. The wheel is uploaded as the artifact "wheel".
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "pip requirement, e.g. git+https://github.com/owner/repo.git@<commit>"
+        required: true
+      py_image:
+        description: "Python 3.15 base image"
+        default: "python:3.15.0rc2-alpine3.24"
+        required: true
+permissions:
+  contents: read
+jobs:
+  wheel:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: builder image
+        run: docker build -q -t builder --build-arg PY_IMAGE="${{ inputs.py_image }}" -f Dockerfile.builder .
+      - name: build
+        env:
+          SRC: ${{ inputs.source }}
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD/out:/out" -e SRC builder sh -c 'pip wheel --no-deps -w /out "$SRC" && cd /out && for w in *.whl; do python -m zipfile -l "$w" | grep -E "\.so|\.py$" | head -40; done'
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with: { name: wheel, path: out, retention-days: 3 }

@@ -21,13 +21,23 @@ on:
         description: "optional pip requirement (e.g. git+https://...@commit) that REPLACES the same package's wheel"
         default: ""
         required: false
+      out_name:
+        description: "GHCR package name of the image (e.g. ha-lite-supervisor for a release)"
+        default: "sup-py315"
+        required: true
+      attest:
+        description: "attach a build provenance attestation to the pushed image"
+        type: boolean
+        default: false
 permissions:
   contents: read
   packages: write
+  id-token: write
+  attestations: write
 env:
   SUP_IMAGE: ghcr.io/home-assistant/aarch64-hassio-supervisor:${{ inputs.sup_version }}
   PY_IMAGE: ${{ inputs.py_image }}
-  OUT_IMAGE: ghcr.io/${{ github.repository_owner }}/sup-py315:${{ inputs.sup_version }}-${{ github.run_number }}
+  OUT_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.out_name }}:${{ inputs.sup_version }}-${{ github.run_number }}
 jobs:
   wheels:
     runs-on: ubuntu-24.04-arm
@@ -113,10 +123,20 @@ jobs:
           "
           done
       - name: push image to GHCR
+        id: push
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker tag sup-py315 "$OUT_IMAGE" && docker push -q "$OUT_IMAGE"
-          echo "pushed $OUT_IMAGE"
+          digest=$(docker inspect -f '{{index .RepoDigests 0}}' "$OUT_IMAGE" | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "pushed $OUT_IMAGE@$digest" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: build provenance attestation
+        if: ${{ inputs.attest }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.out_name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
       - name: image tarball for the VM
         run: docker save sup-py315 | gzip -1 > sup-py315.tar.gz && sha256sum sup-py315.tar.gz | tee sup-py315.tar.gz.sha256
       - uses: actions/upload-artifact@v4

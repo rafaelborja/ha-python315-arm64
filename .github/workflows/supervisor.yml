@@ -25,6 +25,10 @@ on:
         description: "GHCR package name of the image (e.g. ha-lite-supervisor for a release)"
         default: "sup-py315"
         required: true
+      lite_defaults:
+        description: "HA Lite: lazy imports + pymalloc ON by default in the image (the conf file opts out)"
+        type: boolean
+        default: false
       attest:
         description: "attach a build provenance attestation to the pushed image"
         type: boolean
@@ -89,7 +93,8 @@ jobs:
           if grep -q ^FAIL out/status.tsv; then echo "::warning::runtime wheels missing: $(grep ^FAIL out/status.tsv | cut -f2 | tr '\n' ' ')"; fi
           cp lazy/${{ inputs.sup_filter }}.json lazy/sup_filter_v1.json 2>/dev/null || true
           mkdir -p wh && cp out/wh/*.whl wh/
-          docker build -t sup-py315 --build-arg SUP_IMAGE="$SUP_IMAGE" --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.supervisor .
+          lite=(); [ "${{ inputs.lite_defaults }}" = "true" ] && lite=(--build-arg SUP_LAZY_DEFAULT=1 --build-arg PYTHONMALLOC_DEFAULT=pymalloc)
+          docker build -t sup-py315 --build-arg SUP_IMAGE="$SUP_IMAGE" --build-arg PY_IMAGE="$PY_IMAGE" "${lite[@]}" -f Dockerfile.supervisor .
       - name: probe (imports only; 3.14 official, 3.15, 3.15 lazy; pymalloc and mimalloc)
         run: |
           mkdir -p probe

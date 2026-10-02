@@ -1,0 +1,2 @@
+# Compiled replacements: built as cp315 musl arm64 wheels from the PyPI sdist (hash-checked) in Dockerfile.builder.
+dbus-fast==5.0.24 --hash=sha256:0cf75b5dc27b3c39214bcb54955f41737876438164b7d268544d203fa5ceb5b3

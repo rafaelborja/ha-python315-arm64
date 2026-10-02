@@ -1,0 +1,5 @@
+# Pure-Python replacements, downloaded from PyPI with hashes (pip download --no-deps --require-hashes).
+# Each one's pin is bumped in Home Assistant by bump_pins.py.
+python-slugify==9.1.2 --hash=sha256:a470dafd2ad79672606cc0d1a5fcaf7a2ccf8f358073ff29b5b93c2bd7e288d6
+google-genai==2.18.1 --hash=sha256:36a5949233e64a60f6cc4521bff7a76b7c569d0aa227bbe9fa642213b8a3a3b2
+aiooui==0.1.11 --hash=sha256:531e808bba926d80213413202243754a125a100b3e7912dadb3cd3f921e1665d

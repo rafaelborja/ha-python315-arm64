@@ -1,0 +1,226 @@
+name: ha-lite-core
+# HA Lite Core image (arm64): an existing ha-py315 image (build.yml) + the HA Lite layer (Dockerfile.lite-core), built
+# only from public, generic inputs: PyPI packages and public commits pinned by hash, patches in lite/, the lazy filter
+# from the CI import check and test suite. Nothing is derived from a particular installation.
+#  privacy (repo files that feed the image) -> wheels (hash-checked downloads + dbus-fast built for cp315)
+#  -> image (build with gates, package-set check against the official image, privacy check of what the layer adds,
+#     real HA start: HA Lite defaults vs the base with lazy on, push to GHCR, provenance attestation, digest)
+on:
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "ha-py315 image to build on (built by build.yml from a clean tree), e.g. ghcr.io/<owner>/ha-py315:2026.9.3-<run>"
+        required: true
+      ha_version:
+        description: "Home Assistant version of the base image (output tag prefix; checked against the image)"
+        default: "2026.9.3"
+        required: true
+      py_image:
+        description: "Python 3.15 image for the wheel builder (same as the base image's)"
+        default: "python:3.15.0rc2-alpine3.24"
+        required: true
+      holidays_ref:
+        description: "full commit of the holidays lazy-import PR (vacanza/holidays #3839 + #3844) to use; empty = stock holidays"
+        default: "ea0ae11a15cb03126d99d6c19e4645ad13f46a47"
+        required: false
+      nabucasa_source:
+        description: "optional pip requirement for hass-nabucasa without pycognito (public git+https://...@<commit>, version 2.7.0+<local>); empty = stock"
+        default: ""
+        required: false
+      out_name:
+        description: "GHCR package name of the image"
+        default: "ha-lite-core"
+        required: true
+      attest:
+        description: "attach a build provenance attestation to the pushed image"
+        type: boolean
+        default: true
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+env:
+  BASE_IMAGE: ${{ inputs.base_image }}
+  HA_IMAGE: ghcr.io/home-assistant/qemuarm-64-homeassistant:${{ inputs.ha_version }}
+  PY_IMAGE: ${{ inputs.py_image }}
+  OUT_IMAGE: ghcr.io/${{ github.repository_owner }}/${{ inputs.out_name }}:${{ inputs.ha_version }}-${{ github.run_number }}
+  HOLIDAYS_REPO: https://github.com/rafaelborja/holidays
+jobs:
+  privacy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: privacy check of every repository file that goes into the image
+        env:
+          PRIVACY_PATTERNS: ${{ secrets.PRIVACY_PATTERNS }}
+          PRIVACY_ALLOW: ${{ github.repository_owner }}
+        run: |
+          bash lite/privacy-check.sh Dockerfile.lite-core .github/workflows/ha-lite-core.yml lite \
+            lazy/filter_v25.json lazy/ha_lazy_hook.py lazy/ctypes_musl_find_library.py \
+            scripts/precompile.py scripts/patch-run.sh scripts/ha-start-check.sh scripts/list_installed.py
+      - name: inputs are public and generic
+        env:
+          NB: ${{ inputs.nabucasa_source }}
+          HR: ${{ inputs.holidays_ref }}
+        run: |
+          if [ -n "$HR" ] && ! [[ "$HR" =~ ^[0-9a-f]{40}$ ]]; then echo "::error::holidays_ref must be a full commit"; exit 1; fi
+          if [ -n "$NB" ] && ! [[ "$NB" =~ ^git\+https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(\.git)?@[0-9a-f]{40}$ ]]; then
+            echo "::error::nabucasa_source must be git+https://github.com/<owner>/<repo>@<full commit> (public source, exact commit)"; exit 1
+          fi
+
+  wheels:
+    needs: privacy
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: builder image
+        run: docker build -q -t builder --build-arg PY_IMAGE="$PY_IMAGE" -f Dockerfile.builder .
+      - name: replacement packages (PyPI, hash-checked; dbus-fast compiled for cp315)
+        run: |
+          mkdir -p lite-wh
+          docker run --rm -v "$PWD:/w" -w /w -e REQUIRE_CYTHON=1 builder sh -c 'set -e
+            pip download -q --no-deps --require-hashes -r lite/requirements-pure.txt -d lite-wh
+            pip wheel -q --no-deps --require-hashes --no-binary dbus-fast -r lite/requirements-build.txt -w lite-wh'
+          sudo chown -R "$(id -u)" lite-wh
+          ls lite-wh/dbus_fast-5.0.24-cp315-cp315-*.whl
+      - name: optional hass-nabucasa without pycognito
+        if: ${{ inputs.nabucasa_source != '' }}
+        env:
+          SRC: ${{ inputs.nabucasa_source }}
+        run: |
+          mkdir -p nb
+          docker run --rm -v "$PWD/nb:/out" -e SRC builder sh -c 'pip wheel -q --no-deps -w /out "$SRC"'
+          w=$(ls nb/hass_nabucasa-2.7.0+*-py3-none-any.whl)  # a local version keeps HA's ==2.7.0 pin satisfied
+          cp "$w" lite-wh/
+      - name: public source files (sha256-pinned in lite/sources.txt)
+        run: |
+          grep -v '^#' lite/sources.txt | while read -r sha name url; do
+            curl -fsSL --retry 3 -o "lite-wh/$name" "$url"
+            echo "$sha  lite-wh/$name" | sha256sum -c -
+          done
+          (cd lite-wh && sha256sum * | tee SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with: { name: lite-inputs, path: lite-wh, retention-days: 7 }
+
+  image:
+    needs: wheels
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: lite-inputs, path: dl }
+      - name: build inputs
+        env:
+          HR: ${{ inputs.holidays_ref }}
+        run: |
+          set -e
+          (cd dl && sha256sum -c SHA256SUMS)
+          mkdir -p lite-wh lite-src
+          mv dl/*.whl lite-wh/
+          for f in camera_img_util.py recorder_db_schema.py recorder_auto_repairs_schema.py; do mv "dl/$f" lite-src/; done
+          if [ -n "$HR" ]; then
+            git init -q lite-src/holidays
+            git -C lite-src/holidays fetch -q --depth 1 "$HOLIDAYS_REPO" "$HR"
+            git -C lite-src/holidays checkout -q FETCH_HEAD
+            [ "$(git -C lite-src/holidays rev-parse HEAD)" = "$HR" ]; rm -rf lite-src/holidays/.git
+          fi
+          ls lite-wh lite-src
+      - name: build (layer + gates)
+        env:
+          WITH_HOLIDAYS: ${{ inputs.holidays_ref != '' && '1' || '0' }}
+          WITH_NABUCASA: ${{ inputs.nabucasa_source != '' && '1' || '0' }}
+        run: |
+          set -o pipefail
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull -q "$BASE_IMAGE"
+          v=$(docker run --rm --entrypoint python3.15 "$BASE_IMAGE" -c "import homeassistant.const as c; print(c.__version__)")
+          [ "$v" = "${{ inputs.ha_version }}" ] || { echo "::error::base image is HA $v, not ${{ inputs.ha_version }}"; exit 1; }
+          docker build --progress=plain -t ha-lite-core --build-arg BASE_IMAGE="$BASE_IMAGE" \
+            --build-arg WITH_HOLIDAYS="$WITH_HOLIDAYS" --build-arg WITH_NABUCASA="$WITH_NABUCASA" \
+            -f Dockerfile.lite-core . 2>&1 | tee build.log
+          grep -E '^#[0-9]+ [0-9.]+ (gate |pin |all HA Lite gates)' build.log | sed -E 's/^#[0-9]+ [0-9.]+ //' > gates.txt || true
+          grep -o '::warning::HA Lite gate.*' build.log | sort -u || true   # re-emitted so GitHub shows them
+          grep -q 'all HA Lite gates passed' gates.txt
+      - name: package set equals the official image's (nothing setup-specific inside)
+        run: |
+          docker pull -q "$HA_IMAGE"
+          docker run --rm -i --entrypoint python3 "$HA_IMAGE" - < scripts/list_installed.py > official.txt
+          docker run --rm -i --entrypoint python3.15 ha-lite-core - < scripts/list_installed.py > lite.txt
+          python3 - <<'EOF'
+          import re
+          norm = lambda s: re.sub(r"[-_.]+", "-", s).lower()
+          names = lambda p: {norm(l.split("==")[0]) for l in open(p) if l.strip() and not l.startswith("#")}
+          extra = sorted(names("lite.txt") - names("official.txt") - {"pip", "setuptools", "wheel"})
+          print(f"official: {len(names('official.txt'))}, HA Lite: {len(names('lite.txt'))}, only in HA Lite: {extra}")
+          if extra:
+              raise SystemExit("::error::distributions not in the official image: the base must be built from a clean tree")
+          EOF
+      - name: privacy check of what the layer adds (HA source diff, filter, run script, image config)
+        env:
+          PRIVACY_PATTERNS: ${{ secrets.PRIVACY_PATTERNS }}
+          PRIVACY_ALLOW: ${{ github.repository_owner }}
+        run: |
+          mkdir -p pc/base pc/lite
+          b=$(docker create "$BASE_IMAGE"); l=$(docker create ha-lite-core)
+          docker cp "$b:/usr/src/homeassistant/homeassistant" pc/base/ > /dev/null
+          docker cp "$l:/usr/src/homeassistant/homeassistant" pc/lite/ > /dev/null
+          docker cp "$l:/etc/ha-lazy-filter.json" pc/; docker cp "$l:/etc/services.d/home-assistant/run" pc/run
+          docker rm "$b" "$l" > /dev/null
+          diff -ruN -x __pycache__ pc/base pc/lite | grep '^+' | grep -v '^+++' > pc/added.txt || true
+          echo "lines the layer adds to HA's source: $(wc -l < pc/added.txt)"
+          docker inspect ha-lite-core --format '{{json .Config}}' > pc/config.json
+          rm -rf pc/base pc/lite
+          bash lite/privacy-check.sh pc
+      - name: real Home Assistant start (default_config), HA Lite defaults vs base with lazy on
+        run: |
+          mkdir -p report
+          echo "| run | up | interpreter | RSS MiB | ERROR | Traceback | blocking | import/setup errors |" > report/start.md
+          echo "|---|---|---|---|---|---|---|---|" >> report/start.md
+          rc=0
+          bash scripts/ha-start-check.sh "$BASE_IMAGE" base-lazy report/start HA_LAZY=1 PYTHONMALLOC=pymalloc || true
+          bash scripts/ha-start-check.sh ha-lite-core lite report/start || rc=1
+          cat report/start/summary.md >> report/start.md
+          grep -q 'Starting Core on Python 3.15 (lazy imports: 1, .*allocator: pymalloc)' report/start/lite.log \
+            || { echo "::error::HA Lite did not start with lazy imports + pymalloc by default"; rc=1; }
+          base=$(awk -F'|' '$2 ~ /base-lazy/ {gsub(/ /,"",$9); print $9}' report/start/summary.md)
+          n=$(awk -F'|' '$2 ~ / lite / {gsub(/ /,"",$9); print $9}' report/start/summary.md)
+          if [ "${n:-999}" -gt "${base:-0}" ]; then echo "::error::HA Lite: $n import/setup errors vs $base on the base"; rc=1; fi
+          cat report/start.md
+          exit $rc
+      - name: push image to GHCR
+        id: push
+        run: |
+          docker tag ha-lite-core "$OUT_IMAGE" && docker push -q "$OUT_IMAGE"
+          digest=$(docker inspect -f '{{index .RepoDigests 0}}' "$OUT_IMAGE" | cut -d@ -f2)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+      - name: build provenance attestation
+        if: ${{ inputs.attest }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.out_name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - name: summary
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          {
+            echo "## HA Lite Core"
+            echo "Image: \`$OUT_IMAGE\`"; echo; echo "Digest: \`$DIGEST\`"; echo
+            echo "Pull by digest: \`ghcr.io/${{ github.repository_owner }}/${{ inputs.out_name }}@$DIGEST\`"; echo
+            echo "Base: \`$BASE_IMAGE\`; holidays PR: \`${{ inputs.holidays_ref || 'no (stock)' }}\`; hass-nabucasa: \`${{ inputs.nabucasa_source || 'stock' }}\`"
+            echo "### Gates"; echo '```'; cat gates.txt; echo '```'
+            echo "### Inputs (sha256)"; echo '```'; (cd lite-wh && sha256sum *.whl); (cd lite-src && sha256sum *.py); echo '```'
+            echo "### Real start, default_config (RSS 60 s after initialized)"; cat report/start.md
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lite-report
+          path: |
+            report
+            gates.txt
+            build.log

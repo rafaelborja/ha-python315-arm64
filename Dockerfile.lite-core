@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1
+# HA Lite Core: the ha-py315 image (official Home Assistant image + Python 3.15 + cp315 wheels + PEP 810 hook) plus a
+# memory-tuning layer made only of public, generic inputs. Nothing here comes from a particular installation.
+#  - lazy imports ON and the pymalloc allocator by default (ENV below, read by the s6 run script through
+#    with-contenv); /config/ha-py315.conf still overrides them (HA_LAZY=0, HA_PYTHON=3.14, PYTHONMALLOC=mimalloc).
+#    Exclusion filter v25 baked in; /config/ha-lazy-filter.json can still add to it.
+#  - HA source: hardware flasher, stream (numpy/PyAV) and camera TurboJPEG loaded on use; recorder loads only the
+#    SQLAlchemy dialect in use; recorder SQLite cache 1 MB; holiday config flow for the lazy holidays registry
+#  - packages: python-slugify 9.1.2, google-genai 2.18.1, aiooui 0.1.11, dbus-fast 5.0.24, matter-python-client
+#    1.4.0+lowmem.1; optional: holidays lazy-import PR, hass-nabucasa without pycognito. HA's pins follow.
+#  - docstrings replaced by "." in the 3.15 bytecode of HA, every library and the stdlib (.py files unchanged)
+# Inputs prepared by .github/workflows/ha-lite-core.yml: lite-wh/ (hash-checked wheels), lite-src/ (sha256-checked
+# files from lite/sources.txt, plus holidays/ when enabled). The gates at the end fail the build on any mismatch.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+ARG WITH_HOLIDAYS=0
+ARG WITH_NABUCASA=0
+ARG SP=/usr/local/lib/python3.15/site-packages
+ARG HA=/usr/src/homeassistant/homeassistant
+ENV HA_LAZY=1 PYTHONMALLOC=pymalloc
+COPY lazy/filter_v25.json /etc/ha-lazy-filter.json
+
+# 1. sources and packages. The base's recorder DDL and unsatisfied pins are recorded first, for the gates.
+RUN --mount=type=bind,source=lite,target=/tmp/lite \
+    --mount=type=bind,source=lite-src,target=/tmp/lite-src \
+    --mount=type=bind,source=lite-wh,target=/tmp/wh \
+    set -e; C=$HA/components; S=/tmp/lite-state; mkdir -p $S; \
+    python3.15 /tmp/lite/recorder_ddl.py > $S/ddl_base.txt; \
+    python3.15 /tmp/lite/bump_pins.py check $S/pins_base.json; \
+    python3.15 /tmp/lite/patch_hardware_flasher.py; \
+    python3.15 /tmp/lite/patch_stream_camera.py; \
+    python3.15 /tmp/lite/patch_recorder_cache.py; \
+    install -m 644 /tmp/lite-src/camera_img_util.py $C/camera/img_util.py; \
+    python3.15 /tmp/lite/patch_camera_3c74c7b1.py $C; \
+    install -m 644 /tmp/lite-src/recorder_db_schema.py $C/recorder/db_schema.py; \
+    install -m 644 /tmp/lite-src/recorder_auto_repairs_schema.py $C/recorder/auto_repairs/schema.py; \
+    if [ "$WITH_HOLIDAYS" = 1 ]; then \
+      test -f /tmp/lite-src/holidays/holidays/registry.py; \
+      mkdir -p /tmp/holmo; (cd $SP/holidays/locale && find . -name '*.mo' | tar -cf - -T -) | tar -xf - -C /tmp/holmo; \
+      rm -rf $SP/holidays; cp -r /tmp/lite-src/holidays/holidays $SP/holidays; find $SP/holidays -name '*.po' -delete; \
+      (cd /tmp/holmo && tar -cf - .) | tar -xf - -C $SP/holidays/locale; rm -rf /tmp/holmo; \
+      python3.15 /tmp/lite/patch_holiday_config_flow.py $C/holiday/config_flow.py; \
+    fi; \
+    python3.15 -m pip install -q --no-deps --no-index --no-compile --force-reinstall /tmp/wh/*.whl; \
+    python3.15 /tmp/lite/bump_pins.py bump
+
+# 2. docstrings -> "." in the 3.15 bytecode: HA + libraries (modules that read their docstrings keep them: the KEEP
+#    paths in precompile.py and lite/docstring_keep.json, found by HA's test suite), then the stdlib without
+#    site-packages, tests and GUI/installer parts. Runs after every source change: the .pyc carry the source mtime.
+RUN --mount=type=bind,source=scripts/precompile.py,target=/tmp/precompile.py \
+    --mount=type=bind,source=lite/docstring_keep.json,target=/tmp/docstring_keep.json \
+    set -e; STD=/usr/local/lib/python3.15; \
+    DOCSTRIP=placeholder DOCSTRIP_KEEP=/tmp/docstring_keep.json PRECOMPILE_ROOTS=$HA:$SP python3.15 /tmp/precompile.py; \
+    find $STD -name '*.py' ! -path "$STD/site-packages/*" ! -path '*/test/*' ! -path '*/tests/*' ! -path '*/idlelib/*' \
+      ! -path '*/tkinter/*' ! -path '*/turtledemo/*' ! -path '*/ensurepip/*' > /tmp/stdlib.txt; \
+    PRECOMPILE_ONLY=/tmp/stdlib.txt DOCSTRIP=placeholder PRECOMPILE_ROOTS=$STD python3.15 /tmp/precompile.py; \
+    rm /tmp/stdlib.txt
+
+# 3. gates
+RUN --mount=type=bind,source=lite,target=/tmp/lite \
+    set -e; S=/tmp/lite-state; cd /tmp; \
+    python3.15 /tmp/lite/recorder_ddl.py > $S/ddl_lite.txt; \
+    grep -v 'dialects loaded' $S/ddl_base.txt > $S/a; grep -v 'dialects loaded' $S/ddl_lite.txt > $S/b; cmp $S/a $S/b; \
+    echo "gate recorder SQLite DDL and $(grep SCHEMA_VERSION $S/b) unchanged: ok"; \
+    python3.15 /tmp/lite/bump_pins.py compare $S/pins_base.json; \
+    WITH_HOLIDAYS=$WITH_HOLIDAYS WITH_NABUCASA=$WITH_NABUCASA python3.15 /tmp/lite/gates.py; \
+    bash -n /etc/services.d/home-assistant/run; grep -q 'exec python3.15' /etc/services.d/home-assistant/run; \
+    rm -rf $S
+
+LABEL org.opencontainers.image.title="HA Lite Core" \
+      org.opencontainers.image.description="Home Assistant (official image) on Python 3.15 with PEP 810 lazy imports on by default and a memory-tuning layer built only from public sources - experimental" \
+      org.opencontainers.image.source="https://github.com/rafaelborja/ha-python315-arm64"

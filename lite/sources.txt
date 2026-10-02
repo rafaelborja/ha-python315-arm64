@@ -1,0 +1,9 @@
+# Public source files the HA Lite layer takes verbatim, pinned by sha256: "<sha256> <saved as> <url>".
+# Fetched by the workflow into lite-src/ and checked with sha256sum before the build.
+# Camera TurboJPEG in the executor: commit 3c74c7b1 (PR home-assistant/core#183145, branch lazy-import-stream-numpy-av)
+4b8d88545c768a630302215265e48ab99eedf361e31563a3a1820f41d476da4b camera_img_util.py https://raw.githubusercontent.com/rafaelborja/homeassistant-core/3c74c7b149f9430c3bd47ddbdec9351ea0edb18f/homeassistant/components/camera/img_util.py
+# Recorder loads only the SQLAlchemy dialect in use: commit c2cc05c8 (PR home-assistant/core#183398, branch lazy-recorder-dialects)
+52d84a36f8e9dab54a920ab833c3580f72c730203f310cbefb4494d88551f339 recorder_db_schema.py https://raw.githubusercontent.com/rafaelborja/homeassistant-core/c2cc05c84e8e68876045b30408b71fefc294dbab/homeassistant/components/recorder/db_schema.py
+006d93f086090ac52312106fe65ded02c518813bb3ec12cf2760eb8e201f758d recorder_auto_repairs_schema.py https://raw.githubusercontent.com/rafaelborja/homeassistant-core/c2cc05c84e8e68876045b30408b71fefc294dbab/homeassistant/components/recorder/auto_repairs/schema.py
+# Matter client with a lazy cluster registry and compact attributes (prerelease asset of rafaelborja/matterjs-server v1.4.0-lowmem.1)
+9bbe125cdf2d37c90125b535d0f249c5f11bada7ca723ef16933730352ceadb5 matter_python_client-1.4.0+lowmem.1-py3-none-any.whl https://github.com/rafaelborja/matterjs-server/releases/download/v1.4.0-lowmem.1/matter_python_client-1.4.0%2Blowmem.1-py3-none-any.whl

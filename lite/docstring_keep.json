@@ -1,0 +1,7 @@
+[
+ "numpy._core.memmap",
+ "numpy._core.multiarray",
+ "numpy._core.numeric",
+ "sqlalchemy.orm.events",
+ "sqlalchemy.orm.exc"
+]

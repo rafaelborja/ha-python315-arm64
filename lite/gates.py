@@ -80,9 +80,7 @@ async def _turbo():
 asyncio.run(_turbo())
 ok("camera 3c74c7b1 (TurboJPEG -> %s)" % type(img_util.TurboJPEGSingleton.instance()).__name__)
 
-# U-6 / U-7: patched modules import; what they defer is reported (a stock import elsewhere may still pull it in)
-from homeassistant.components.homeassistant_hardware.util import LazyFlasherClass  # noqa: E402,F401
-
+# U-6 (upstream since 2026.11, #183283) / U-7: what importing these modules still loads is reported
 loaded = json.loads(fresh(
     "import json, sys, homeassistant.components.homeassistant_hardware.util, homeassistant.components.stream; "
     "print(json.dumps([m for m in ('universal_silabs_flasher', 'zigpy', 'bellows', 'av', 'numpy', 'turbojpeg') if m in sys.modules]))"))

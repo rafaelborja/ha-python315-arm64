@@ -5,6 +5,9 @@
 # Writes $2/status.tsv (OK|FAIL <tab> package <tab> seconds) and $2/logs/<name>.log for failures.
 # PREV_STATUS=<status.tsv of an earlier run>: packages that were OK there are not rebuilt (their wheels must already
 # be in $2/wh); they are recorded as OK with 0 seconds.
+# extras/source-overrides.txt: "name==version <pip requirement>" builds that pinned package from the given source
+# (an exact public commit) instead of PyPI, when the release does not build on 3.15 but the fix is upstream.
+OVR="$(dirname "$0")/../extras/source-overrides.txt"
 LIST=$1; OUT=$2; mkdir -p "$OUT/wh" "$OUT/logs"; : > "$OUT/status.tsv"
 DEPS=--no-deps; [ "${WITH_DEPS:-0}" = 1 ] && DEPS=
 CONS=; [ -n "${CONSTRAINTS:-}" ] && CONS="-c $CONSTRAINTS"
@@ -27,14 +30,20 @@ fi
 while IFS= read -r p || [ -n "$p" ]; do
   [ -z "$p" ] && continue
   n=${p%%==*}; t=$(date +%s)
+  src=$p; o=$(grep -v '^#' "$OVR" 2>/dev/null | awk -v p="$p" '$1 == p {print $2; exit}'); [ -n "$o" ] && src=$o
   if [ -n "${PREV_STATUS:-}" ] && grep -q -F -x "$(printf 'OK\t%s' "$p")" /tmp/prev.ok 2>/dev/null; then
     printf 'OK\t%s\t0\n' "$p" >> "$OUT/status.tsv"; continue
   fi
   # shellcheck disable=SC2086
-  if timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$p" > "$OUT/logs/$n.log" 2>&1; then
+  [ "$src" != "$p" ] && echo "source override for $p: $src" > "$OUT/logs/$n.log"
+  if timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$src" >> "$OUT/logs/$n.log" 2>&1; then
+    s=OK; rm -f "$OUT/logs/$n.log"
+  elif grep -q "is not supported by the following package" "$OUT/logs/$n.log" && [ -x /opt/cargo/bin/rustc ] &&
+       PATH=/opt/cargo/bin:$PATH RUSTUP_HOME=/opt/rustup timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$src" >> "$OUT/logs/$n.log" 2>&1; then
+    # Retry-only: the crate needs a newer rustc than Alpine ships; every other crate keeps Alpine's toolchain.
     s=OK; rm -f "$OUT/logs/$n.log"
   elif grep -q "newer than PyO3's maximum supported version" "$OUT/logs/$n.log" &&
-       PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$p" >> "$OUT/logs/$n.log" 2>&1; then
+       PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 timeout 45m pip wheel $DEPS $CONS -w "$OUT/wh" "$src" >> "$OUT/logs/$n.log" 2>&1; then
     # Retry-only: forcing the stable ABI on every PyO3 build breaks crates that use the full API (pydantic-core).
     s=OK; rm -f "$OUT/logs/$n.log"
   else

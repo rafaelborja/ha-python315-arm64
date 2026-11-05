@@ -118,11 +118,11 @@ r = fresh("import homeassistant.core as c, json, asyncio, sqlalchemy.orm.exc as 
 assert r.startswith(". . . |") and not r.endswith("| ."), r
 ok("docstring placeholders (DOCSTRIP_KEEP modules keep theirs)")
 
-# Lazy filter v25 baked, defaults on without /config files
+# Lazy filter v26 baked, defaults on without /config files
 f = json.load(open("/etc/ha-lazy-filter.json"))
-assert "vobject" in f["importers"] and "probatio" in f["names"], "baked filter is not v25"
+assert "vobject" in f["importers"] and "probatio" in f["names"] and "hass_nabucasa.auth.cognito" in f["importers"], "baked filter is not v26"
 assert os.environ.get("HA_LAZY") == "1" and os.environ.get("PYTHONMALLOC") == "pymalloc"
-ok("filter v25 baked, HA_LAZY=1 + PYTHONMALLOC=pymalloc by default")
+ok("filter v26 baked, HA_LAZY=1 + PYTHONMALLOC=pymalloc by default")
 
 # Same imports with lazy imports on, every lazy name resolved
 mods = ["homeassistant.core", "homeassistant.components.stream", "homeassistant.components.recorder",

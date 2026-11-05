@@ -3,7 +3,7 @@
 # memory-tuning layer made only of public, generic inputs. Nothing here comes from a particular installation.
 #  - lazy imports ON and the pymalloc allocator by default (ENV below, read by the s6 run script through
 #    with-contenv); /config/ha-py315.conf still overrides them (HA_LAZY=0, HA_PYTHON=3.14, PYTHONMALLOC=mimalloc).
-#    Exclusion filter v25 baked in; /config/ha-lazy-filter.json can still add to it.
+#    Exclusion filter v26 baked in; /config/ha-lazy-filter.json can still add to it.
 #  - HA source: stream (numpy/PyAV) and camera TurboJPEG loaded on use; recorder loads only the
 #    SQLAlchemy dialect in use; recorder SQLite cache 1 MB; holiday config flow for the lazy holidays registry
 #  - packages: aiooui 0.1.11, dbus-fast 5.2.0, matter-python-client 1.5.5+lowmem.1; optional: holidays lazy-import PR, hass-nabucasa without pycognito. HA's pins follow.
@@ -17,7 +17,7 @@ ARG WITH_NABUCASA=0
 ARG SP=/usr/local/lib/python3.15/site-packages
 ARG HA=/usr/src/homeassistant/homeassistant
 ENV HA_LAZY=1 PYTHONMALLOC=pymalloc
-COPY lazy/filter_v25.json /etc/ha-lazy-filter.json
+COPY lazy/filter_v26.json /etc/ha-lazy-filter.json
 
 # 1. sources and packages. The base's recorder DDL and unsatisfied pins are recorded first, for the gates.
 RUN --mount=type=bind,source=lite,target=/tmp/lite \

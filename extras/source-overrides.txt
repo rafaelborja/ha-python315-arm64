@@ -1,0 +1,4 @@
+# name==version <pip requirement>: build this pinned package from an exact public commit instead of the PyPI release.
+# guppy3 3.1.7 does not build on 3.15 (PyInterpreterState.executor_list_head is gone, zhuyifei1999/guppy3#58);
+# upstream master builds and reports the same version 3.1.7, so HA's guppy3==3.1.7 pin stays satisfied.
+guppy3==3.1.7 git+https://github.com/zhuyifei1999/guppy3@2e197020ab23c898cb9e62a04cc2140dd62119ec

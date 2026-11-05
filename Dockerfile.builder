@@ -9,6 +9,13 @@ RUN apk add --no-cache build-base linux-headers pkgconf cmake ninja git rust car
       eigen-dev freetype-dev harfbuzz-dev hdf5-dev openjpeg-dev uchardet-dev nasm zlib-ng-dev zlib-dev c-ares-dev \
       libusb-dev cups-dev postgresql-dev mariadb-dev unixodbc-dev bzip2-dev xz-dev \
  && pip install -q -U pip wheel setuptools cython
+# A newer Rust for crates that require more than Alpine's rustc (deebot-client needs 1.99). Off PATH: build-wheels.sh
+# retries with it only when cargo reports that the installed rustc is too old.
+ARG RUST_NEW=1.99.1
+RUN apk add --no-cache rustup \
+ && RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo rustup-init -y -q --no-modify-path --profile minimal \
+      --default-toolchain "$RUST_NEW" \
+ && RUSTUP_HOME=/opt/rustup /opt/cargo/bin/rustc -V
 # -Wno-error=int-conversion: GCC 14+ made int/pointer mixing an error; old C sources (netifaces 0.11) still do it.
 ENV MAKEFLAGS=-j4 CARGO_BUILD_JOBS=4 CMAKE_BUILD_PARALLEL_LEVEL=4 GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS=4 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_PREFER_BINARY=1 \

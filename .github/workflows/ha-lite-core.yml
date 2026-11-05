@@ -57,7 +57,7 @@ jobs:
           PRIVACY_ALLOW: ${{ github.repository_owner }}
         run: |
           bash lite/privacy-check.sh Dockerfile.lite-core .github/workflows/ha-lite-core.yml lite \
-            lazy/filter_v25.json lazy/ha_lazy_hook.py lazy/ctypes_musl_find_library.py \
+            lazy/filter_v26.json lazy/ha_lazy_hook.py lazy/ctypes_musl_find_library.py \
             scripts/precompile.py scripts/patch-run.sh scripts/ha-start-check.sh scripts/list_installed.py
       - name: inputs are public and generic
         env:

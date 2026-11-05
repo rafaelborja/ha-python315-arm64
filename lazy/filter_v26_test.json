@@ -60,7 +60,9 @@
   "hass_nabucasa.auth.cognito",
   "boto3",
   "botocore",
-  "pycognito"
+  "pycognito",
+  "httpx2",
+  "pydantic_xml"
  ],
  "names": [
   "builtins",

@@ -7,11 +7,11 @@ on:
     inputs:
       sup_version:
         description: "Supervisor version (image tag and git tag)"
-        default: "2026.09.2"
+        default: "2026.10.5"
         required: true
       py_image:
         description: "Python 3.15 base image"
-        default: "python:3.15.0rc2-alpine3.24"
+        default: "python:3.15.2-alpine3.24"
         required: true
       sup_filter:
         description: "lazy filter under lazy/ (without .json)"

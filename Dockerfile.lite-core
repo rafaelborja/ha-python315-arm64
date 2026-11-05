@@ -4,10 +4,9 @@
 #  - lazy imports ON and the pymalloc allocator by default (ENV below, read by the s6 run script through
 #    with-contenv); /config/ha-py315.conf still overrides them (HA_LAZY=0, HA_PYTHON=3.14, PYTHONMALLOC=mimalloc).
 #    Exclusion filter v25 baked in; /config/ha-lazy-filter.json can still add to it.
-#  - HA source: hardware flasher, stream (numpy/PyAV) and camera TurboJPEG loaded on use; recorder loads only the
+#  - HA source: stream (numpy/PyAV) and camera TurboJPEG loaded on use; recorder loads only the
 #    SQLAlchemy dialect in use; recorder SQLite cache 1 MB; holiday config flow for the lazy holidays registry
-#  - packages: python-slugify 9.1.2, google-genai 2.18.1, aiooui 0.1.11, dbus-fast 5.0.24, matter-python-client
-#    1.4.0+lowmem.1; optional: holidays lazy-import PR, hass-nabucasa without pycognito. HA's pins follow.
+#  - packages: aiooui 0.1.11, dbus-fast 5.2.0, matter-python-client 1.5.5+lowmem.1; optional: holidays lazy-import PR, hass-nabucasa without pycognito. HA's pins follow.
 #  - docstrings replaced by "." in the 3.15 bytecode of HA, every library and the stdlib (.py files unchanged)
 # Inputs prepared by .github/workflows/ha-lite-core.yml: lite-wh/ (hash-checked wheels), lite-src/ (sha256-checked
 # files from lite/sources.txt, plus holidays/ when enabled). The gates at the end fail the build on any mismatch.
@@ -27,7 +26,6 @@ RUN --mount=type=bind,source=lite,target=/tmp/lite \
     set -e; C=$HA/components; S=/tmp/lite-state; mkdir -p $S; \
     python3.15 /tmp/lite/recorder_ddl.py > $S/ddl_base.txt; \
     python3.15 /tmp/lite/bump_pins.py check $S/pins_base.json; \
-    python3.15 /tmp/lite/patch_hardware_flasher.py; \
     python3.15 /tmp/lite/patch_stream_camera.py; \
     python3.15 /tmp/lite/patch_recorder_cache.py; \
     install -m 644 /tmp/lite-src/camera_img_util.py $C/camera/img_util.py; \

@@ -13,18 +13,18 @@ on:
         required: true
       ha_version:
         description: "Home Assistant version of the base image (output tag prefix; checked against the image)"
-        default: "2026.9.3"
+        default: "2026.11.0"
         required: true
       py_image:
         description: "Python 3.15 image for the wheel builder (same as the base image's)"
-        default: "python:3.15.0rc2-alpine3.24"
+        default: "python:3.15.2-alpine3.24"
         required: true
       holidays_ref:
         description: "full commit of the holidays lazy-import PR (vacanza/holidays #3839 + #3844) to use; empty = stock holidays"
-        default: "ea0ae11a15cb03126d99d6c19e4645ad13f46a47"
+        default: "707024a0c4887fe38086ef0dc1f903a4bb950f77"
         required: false
       nabucasa_source:
-        description: "optional pip requirement for hass-nabucasa without pycognito (public git+https://...@<commit>, version 2.7.0+<local>); empty = stock"
+        description: "optional pip requirement for hass-nabucasa without pycognito (public git+https://...@<commit>, version 2.8.1+<local>); empty = stock"
         default: ""
         required: false
       out_name:
@@ -84,7 +84,7 @@ jobs:
             pip download -q --no-deps --require-hashes -r lite/requirements-pure.txt -d lite-wh
             pip wheel -q --no-deps --require-hashes --no-binary dbus-fast -r lite/requirements-build.txt -w lite-wh'
           sudo chown -R "$(id -u)" lite-wh
-          ls lite-wh/dbus_fast-5.0.24-cp315-cp315-*.whl
+          ls lite-wh/dbus_fast-5.2.0-cp315-cp315-*.whl
       - name: optional hass-nabucasa without pycognito
         if: ${{ inputs.nabucasa_source != '' }}
         env:
@@ -92,7 +92,7 @@ jobs:
         run: |
           mkdir -p nb
           docker run --rm -v "$PWD/nb:/out" -e SRC builder sh -c 'pip wheel -q --no-deps -w /out "$SRC"'
-          w=$(ls nb/hass_nabucasa-2.7.0+*-py3-none-any.whl)  # a local version keeps HA's ==2.7.0 pin satisfied
+          w=$(ls nb/hass_nabucasa-2.8.1+*-py3-none-any.whl)  # a local version keeps HA's ==2.8.1 pin satisfied
           cp "$w" lite-wh/
       - name: public source files (sha256-pinned in lite/sources.txt)
         run: |

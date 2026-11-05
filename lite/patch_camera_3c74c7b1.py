@@ -1,4 +1,4 @@
-"""HA Lite: camera TurboJPEG created in the executor before first use (commit 3c74c7b149f9430c3bd47ddbdec9351ea0edb18f,
+"""HA Lite: camera TurboJPEG created in the executor before first use (PR head ebc35e6a44a68bb51b31c25d79da0f900a1bf46b,
 branch lazy-import-stream-numpy-av of rafaelborja/homeassistant-core, PR home-assistant/core#183145).
 
 camera/img_util.py is replaced by that commit's file before this runs (sha256-pinned in lite/sources.txt); this adds
@@ -18,8 +18,8 @@ def patch(path, old, new):
 
 
 patch(f"{C}/camera/__init__.py",
-      "    TurboJPEGSingleton,  # noqa: F401\n",
-      "    TurboJPEGSingleton,  # noqa: F401\n    async_ensure_turbojpeg,\n")
+      "from .img_util import TurboJPEGSingleton, scale_jpeg_camera_image\n",
+      "from .img_util import (\n    TurboJPEGSingleton,\n    async_ensure_turbojpeg,\n    scale_jpeg_camera_image,\n)\n")
 patch(f"{C}/camera/__init__.py",
       "                    assert height is not None\n                    return Image(\n",
       "                    assert height is not None\n                    await async_ensure_turbojpeg(camera.hass)\n"

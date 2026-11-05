@@ -1,7 +1,7 @@
 # Wheel builder: Python 3.15 (musl, arm64) + the toolchain and -dev packages Home Assistant's own wheel
 # workflow uses (home-assistant/core .github/workflows/wheels.yml, "integrations" job), so the same sdists compile.
 # Every package name below was checked to exist on Alpine 3.24 (2026-09-25).
-ARG PY_IMAGE=python:3.15.0rc2-alpine3.24
+ARG PY_IMAGE=python:3.15.2-alpine3.24
 FROM ${PY_IMAGE}
 RUN apk add --no-cache build-base linux-headers pkgconf cmake ninja git rust cargo autoconf automake libtool meson \
       bluez-dev libffi-dev openssl-dev glib-dev eudev-dev libxml2-dev libxslt-dev libpng-dev libjpeg-turbo-dev \

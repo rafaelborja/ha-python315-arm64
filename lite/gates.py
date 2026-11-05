@@ -30,16 +30,10 @@ def fresh(code):
 
 
 # Versions of every replaced distribution
-want = {"python-slugify": "9.1.2", "google-genai": "2.18.1", "aiooui": "0.1.11", "dbus-fast": "5.0.24",
-        "matter-python-client": "1.4.0+lowmem.1"}
+want = {"aiooui": "0.1.11", "dbus-fast": "5.2.0", "matter-python-client": "1.5.5+lowmem.1"}
 for pkg, v in want.items():
     assert m.version(pkg) == v, (pkg, m.version(pkg), v)
 ok("versions " + ", ".join(f"{k} {v}" for k, v in want.items()))
-
-# python-slugify 9.1.2: ASCII fast path
-s = __import__("importlib").import_module("slugify.slugify")
-assert "isascii" in inspect.getsource(s._transliterate)
-ok("slugify fast path")
 
 # dbus-fast compiled (Cython) and importable
 assert fresh("import dbus_fast.aio, dbus_fast.message; import dbus_fast._private.marshaller as mm; print(mm.__file__)").endswith(".so")
@@ -48,8 +42,8 @@ ok("dbus-fast compiled marshaller")
 # matter-python-client lowmem: lazy cluster registry + compact attributes; HA's matter integration imports
 r = fresh("import chip.clusters.ClusterObjects as co, chip.clusters.Objects as o; n = dict.__len__(co.ALL_CLUSTERS); "
           "c = co.ALL_CLUSTERS[6]; a = c.Attributes.OnOff; "
-          "assert c.__name__ == 'OnOff' and n < 143 and a.attribute_id == 0 and a.cluster_id == 6, (n, c, a); print(n)")
-ok(f"chip lazy registry + compact ({r} of 143 clusters loaded at import)")
+          "assert c.__name__ == 'OnOff' and n < 156 and a.attribute_id == 0 and a.cluster_id == 6, (n, c, a); print(n)")
+ok(f"chip lazy registry + compact ({r} of 156 clusters loaded at import)")
 fresh("import homeassistant.components.matter, homeassistant.components.matter.discovery")
 ok("HA matter import")
 
@@ -112,7 +106,7 @@ if os.environ.get("WITH_HOLIDAYS") == "1":
 # hass-nabucasa without pycognito (optional)
 if os.environ.get("WITH_NABUCASA") == "1":
     v = m.version("hass-nabucasa")
-    assert v.startswith("2.7.0+"), v  # a local version keeps HA's hass-nabucasa==2.7.0 pin satisfied
+    assert v.startswith("2.8.1+"), v  # a local version keeps HA's hass-nabucasa==2.8.1 pin satisfied
     bad = fresh("import sys, hass_nabucasa, hass_nabucasa.auth; "
                 "print(sorted(k for k in sys.modules if k.split('.')[0] in {'pycognito', 'boto3', 'botocore'}))")
     assert bad == "[]", bad

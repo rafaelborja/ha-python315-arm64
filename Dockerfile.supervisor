@@ -4,8 +4,8 @@
 # (/data/sup-py315.conf: SUP_LAZY=1; on HAOS /data is /mnt/data/supervisor). SUP_PYTHON=3.14 there starts the
 # original interpreter instead. If this image does not start, HAOS's launcher (haos-supervisor) removes it and pulls
 # the official one again.
-ARG SUP_IMAGE=ghcr.io/home-assistant/aarch64-hassio-supervisor:2026.09.2
-ARG PY_IMAGE=python:3.15.0rc2-alpine3.24
+ARG SUP_IMAGE=ghcr.io/home-assistant/aarch64-hassio-supervisor:2026.10.5
+ARG PY_IMAGE=python:3.15.2-alpine3.24
 FROM ${PY_IMAGE} AS py
 
 FROM ${SUP_IMAGE}

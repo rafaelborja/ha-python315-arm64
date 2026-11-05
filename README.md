@@ -1,6 +1,6 @@
 # ha-python315-arm64 (side project, experiment)
 
-Home Assistant 2026.9.3 on **Python 3.15 RC**, built on the **official aarch64 image, unchanged**: Python 3.15 is
+Home Assistant 2026.11.0 on **Python 3.15**, built on the **official aarch64 image, unchanged**: Python 3.15 is
 installed next to 3.14 and every package the image ships gets a cp315 wheel. Core starts on 3.15. PEP 810 lazy
 imports (`-X lazy_imports=all`) are **off by default** and are switched on at runtime, with an editable exclusion
 list, so tuning needs no rebuild.

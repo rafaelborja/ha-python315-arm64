@@ -9,11 +9,11 @@ on:
     inputs:
       ha_version:
         description: "Home Assistant version (image tag and core git tag)"
-        default: "2026.9.3"
+        default: "2026.11.0"
         required: true
       py_image:
         description: "Python 3.15 image (must be the same Alpine release as the HA image)"
-        default: "python:3.15.0rc2-alpine3.24"
+        default: "python:3.15.2-alpine3.24"
         required: true
       run_tests:
         description: "run HA's test suite"
@@ -128,9 +128,8 @@ jobs:
                   try: importlib.import_module(m)
                   except Exception as e: out.append(f'{m}: {e}')
               return out
-          need = bad(['ssl','sqlite3','ctypes','lzma','bz2','zlib','_uuid','_hashlib','pyexpat','zoneinfo','select','mmap','_ssl','_sqlite3','_ctypes'])
-          # _decimal: the official python:3.15.0rc2-alpine image ships without it; decimal falls back to _pydecimal
-          opt = bad(['_decimal','readline','_curses','_dbm','_gdbm','_tkinter'])
+          need = bad(['ssl','sqlite3','ctypes','lzma','bz2','zlib','_uuid','_hashlib','pyexpat','zoneinfo','select','mmap','_ssl','_sqlite3','_ctypes','_decimal'])
+          opt = bad(['readline','_curses','_dbm','_gdbm','_tkinter'])
           import homeassistant.const as c
           print(sys.version, c.__version__); print('optional missing:', opt); print('REQUIRED missing:', need); assert not need"
           docker run --rm --entrypoint python3.15 ha-py315 -X lazy_imports=all -c "import sys, homeassistant.core; print('lazy mode:', sys.get_lazy_imports(), 'filter:', sys.get_lazy_imports_filter())"

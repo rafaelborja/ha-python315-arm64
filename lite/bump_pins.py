@@ -3,7 +3,7 @@
 Home Assistant checks every requirement of an integration when it sets it up and reinstalls a package whose installed
 version does not satisfy the pin (manifest.json "requirements", constrained by package_constraints.txt). A replaced
 wheel without the matching pin bump is silently put back at runtime (bluetooth, cast, cloud, matter and mobile_app
-failed that way with dbus-fast). Local versions ("1.4.0+lowmem.1") satisfy "==1.4.0" and need no bump.
+failed that way with dbus-fast). Local versions ("1.5.5+lowmem.1") satisfy "==1.5.5" and need no bump.
 
   bump_pins.py bump                  apply BUMPS; fails if an old pin is missing or survives anywhere
   bump_pins.py check OUT.json        record every pin an installed distribution does not satisfy
@@ -20,11 +20,9 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 HA = os.environ.get("HA_SRC", "/usr/src/homeassistant/homeassistant")
-# (package, old, new, files under homeassistant/ that pin it in 2026.9.3)
+# (package, old, new, files under homeassistant/ that pin it in 2026.11.0)
 BUMPS = [
-    ("python-slugify", "8.0.4", "9.1.2", ["package_constraints.txt"]),
-    ("dbus-fast", "5.0.22", "5.0.24", ["package_constraints.txt", "components/bluetooth/manifest.json"]),
-    ("google-genai", "2.16.0", "2.18.1", ["components/google_generative_ai_conversation/manifest.json"]),
+    ("dbus-fast", "5.0.22", "5.2.0", ["package_constraints.txt", "components/bluetooth/manifest.json"]),
     ("aiooui", "0.1.9", "0.1.11", ["components/nmap_tracker/manifest.json"]),
 ]
 

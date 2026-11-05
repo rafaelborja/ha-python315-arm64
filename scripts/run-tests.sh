@@ -14,8 +14,11 @@ pt() {  # pt <tag> <paths file> [docker env args...]
   local tag=$1 list=$2; shift 2
   mapfile -t paths < "$list"
   [ ${#paths[@]} -eq 0 ] && return 0
-  timeout 170m docker run "${common[@]}" "$@" "$IMG" -m pytest -p no:cacheprovider -n 4 --dist loadfile \
+  local name="ha-test-$tag-$$"
+  # timeout alone kills only the docker client; the container kept running (a hung lazy rerun ate the 6 h job limit)
+  timeout -k 1m 170m docker run --name "$name" "${common[@]}" "$@" "$IMG" -m pytest -p no:cacheprovider -n 4 --dist loadfile \
     --timeout 120 --continue-on-collection-errors -o junit_family=xunit1 -q -rfE --junitxml="/r/$tag.xml" "${paths[@]}" > "$OUT/$tag.log" 2>&1
+  docker rm -f "$name" >/dev/null 2>&1
   echo "$tag: $(tail -1 "$OUT/$tag.log")"
 }
 

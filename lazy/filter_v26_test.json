@@ -37,6 +37,7 @@
   "pytest_aiohttp",
   "pytest_xdist",
   "tests",
+  "pytest_homeassistant",
   "pint",
   "truststore",
   "pyairvisual",

@@ -135,9 +135,12 @@ jobs:
           docker run --rm --entrypoint python3.15 ha-py315 -X lazy_imports=all -c "import sys, homeassistant.core; print('lazy mode:', sys.get_lazy_imports(), 'filter:', sys.get_lazy_imports_filter())"
           # ctypes.util.find_library must agree with 3.14 (libraries loaded via ctypes: libpcap for DHCP, libusb, ...)
           for lib in pcap usb-1.0 c ssl crypto z ffi udev bluetooth; do
-            a=$(docker run --rm --entrypoint python3 ha-py315 -c "import ctypes.util as u; print(u.find_library('$lib'))")
-            b=$(docker run --rm --entrypoint python3.15 ha-py315 -c "import ctypes.util as u; print(u.find_library('$lib'))")
-            echo "find_library($lib): 3.14=$a 3.15=$b"; [ "$a" = "$b" ] || { echo "::error::find_library($lib) differs"; exit 1; }
+            # 3.15.2 finds musl libraries itself and may return the soname (libpcap.so.1) where 3.14 returns the file
+            # name (libpcap.so.1.10.7): compare the file each name loads, and that it loads at all.
+            r='import ctypes, ctypes.util as u, os; n = u.find_library("'$lib'"); n or print(None, None) or exit(); ctypes.CDLL(n); print(n, next((os.path.realpath(os.path.join(d, n)) for d in ("/lib", "/usr/local/lib", "/usr/lib") if os.path.exists(os.path.join(d, n))), "?"))'
+            a=$(docker run --rm --entrypoint python3 ha-py315 -c "$r")
+            b=$(docker run --rm --entrypoint python3.15 ha-py315 -c "$r")
+            echo "find_library($lib): 3.14=$a 3.15=$b"; [ "${a#* }" = "${b#* }" ] && [ "${b#* }" != "?" ] || { echo "::error::find_library($lib) loads a different file"; exit 1; }
           done
           # uv must target 3.15 when told to (HA installs runtime requirements through it)
           docker run --rm -e UV_PYTHON=/usr/local/bin/python3.15 --entrypoint python3.15 ha-py315 -m uv pip list -q | head -3

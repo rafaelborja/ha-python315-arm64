@@ -70,7 +70,7 @@ jobs:
         run: |
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           mkdir -p wh-test; find wheels-test -name '*.whl' -exec cp {} wh-test/ \;
-          for p in core/packages/pytest-homeassistant; do
+          for p in core/packages/pytest-homeassistant core/packages/pylint-home-assistant; do
             [ -d "$p" ] && python3 -m pip wheel -q --no-deps --ignore-requires-python -w wh-test "$p"
           done
           docker build -q -t ha-py315-test --build-arg BASE="$IMAGE" --build-arg TEST_FILTER="${{ inputs.test_filter }}" -f Dockerfile.test .

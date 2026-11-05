@@ -23,8 +23,13 @@ for d in sorted((tests / "components").iterdir()):
         files = list(d.rglob("test_*.py"))
         if files:
             units[d.relative_to(core).as_posix()] = weight(files)
+# Tests of HA's development tooling whose conftest needs a package that cannot be built from a checkout
+# (2026.11: packages/hassfest needs generated data): a conftest import error would abort the whole shard.
+SKIP_DIRS = ("script/hassfest/", "script/test_gen_requirements_all.py")
 for f in sorted(tests.rglob("test_*.py")):
     rel = f.relative_to(tests)
+    if rel.as_posix().startswith(SKIP_DIRS):
+        continue
     if rel.parts[0] != "components":
         units[f.relative_to(core).as_posix()] = weight([f])
 shards = [[0, []] for _ in range(n)]
